@@ -5,28 +5,41 @@ from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
 import math
+import random
 
-# Simple vertex shader
+# Vertex shader with support for per-vertex colors
 vertex_shader = """
 #version 330 core
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 color;
+
+out vec3 vertexColor;
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
 void main() {
     gl_Position = projection * view * model * vec4(position, 1.0);
+    vertexColor = color;
 }
 """
 
-# Simple fragment shader
+# Fragment shader
 fragment_shader = """
 #version 330 core
+in vec3 vertexColor;
 out vec4 frag_color;
-uniform vec3 color;
+
+uniform vec3 objectColor;
+uniform float useVertexColor;
 
 void main() {
-    frag_color = vec4(color, 1.0);
+    if (useVertexColor > 0.5) {
+        frag_color = vec4(vertexColor, 1.0);
+    } else {
+        frag_color = vec4(objectColor, 1.0);
+    }
 }
 """
 
@@ -39,23 +52,22 @@ class GLView(Gtk.GLArea):
         self.connect("render", self.on_render)
         
         # Camera control
-        self.camera_rotation = [20.0, -45.0]  # Camera rotation (pitch, yaw)
-        self.zoom = 5.0
-        self.camera_position = [0.0, 0.0, 0.0]
+        self.camera_rotation = [30.0, -45.0]  # Better angle to see the floor
+        self.zoom = 10.0
+        self.camera_position = [0.0, 3.0, 0.0]  # Start above the floor
         
-        # Object control
-        self.object_position = [0.0, 0.0, 0.0]
-        self.object_rotation = [0.0, 0.0]
-        
-        # Mouse control state
+        # Mouse control
         self.last_mouse_pos = None
         self.dragging_object = False
-        self.selected_object = None
         
         # Movement
         self.keys_pressed = set()
-        self.movement_speed = 0.1
+        self.movement_speed = 0.2
         self.render_timer = None
+        
+        # Objects in the scene
+        self.objects = []
+        self.selected_object = None
         
         # Set up events
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
@@ -75,17 +87,18 @@ class GLView(Gtk.GLArea):
         self.set_can_focus(True)
         
         # OpenGL objects
-        self.vao = None
-        self.vbo = None
-        self.ebo = None
+        self.cube_vao = None
+        self.grid_vao = None
         self.shader = None
 
     def on_realize(self, area):
         self.make_current()
         
         # Initialize OpenGL
-        glClearColor(0.2, 0.2, 0.2, 1.0)
+        glClearColor(0.15, 0.15, 0.15, 1.0)  # Dark background
         glEnable(GL_DEPTH_TEST)
+        glEnable(GL_LINE_SMOOTH)
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
         
         # Create shader
         self.shader = compileProgram(
@@ -93,101 +106,185 @@ class GLView(Gtk.GLArea):
             compileShader(fragment_shader, GL_FRAGMENT_SHADER)
         )
         
-        # Create cube
+        # Create geometry
         self.setup_cube()
+        self.setup_grid()
+        self.create_scene_objects()
         
     def setup_cube(self):
-        # Cube vertices
-        vertices = np.array([
-            # Front face (z = 0.5)
-            -0.5, -0.5,  0.5,
-             0.5, -0.5,  0.5,
-             0.5,  0.5,  0.5,
-            -0.5,  0.5,  0.5,
-            
-            # Back face (z = -0.5)
-            -0.5, -0.5, -0.5,
-             0.5, -0.5, -0.5,
-             0.5,  0.5, -0.5,
-            -0.5,  0.5, -0.5,
-            
-            # Top face (y = 0.5)
-            -0.5,  0.5,  0.5,
-             0.5,  0.5,  0.5,
-             0.5,  0.5, -0.5,
-            -0.5,  0.5, -0.5,
-            
-            # Bottom face (y = -0.5)
-            -0.5, -0.5,  0.5,
-             0.5, -0.5,  0.5,
-             0.5, -0.5, -0.5,
-            -0.5, -0.5, -0.5,
-            
-            # Right face (x = 0.5)
-             0.5, -0.5,  0.5,
-             0.5, -0.5, -0.5,
-             0.5,  0.5, -0.5,
-             0.5,  0.5,  0.5,
-            
-            # Left face (x = -0.5)
-            -0.5, -0.5,  0.5,
-            -0.5, -0.5, -0.5,
-            -0.5,  0.5, -0.5,
-            -0.5,  0.5,  0.5,
-        ], dtype=np.float32)
+        """Create a unit cube mesh"""
+        vertices = []
+        colors = []
         
-        # Indices
-        indices = np.array([
-            # Front face
-            0, 1, 2,    2, 3, 0,
-            # Back face
-            4, 5, 6,    6, 7, 4,
-            # Top face
-            8, 9, 10,   10, 11, 8,
-            # Bottom face
-            12, 13, 14, 14, 15, 12,
-            # Right face
-            16, 17, 18, 18, 19, 16,
-            # Left face
-            20, 21, 22, 22, 23, 20
-        ], dtype=np.uint32)
+        # Define cube faces with colors
+        faces = [
+            # Front (z=0.5) - slightly different shades for each face
+            ([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]),
+            # Back (z=-0.5)
+            ([0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]),
+            # Top (y=0.5)
+            ([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]),
+            # Bottom (y=-0.5)
+            ([-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5]),
+            # Right (x=0.5)
+            ([0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]),
+            # Left (x=-0.5)
+            ([-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5])
+        ]
         
-        # Create VAO, VBO, EBO
-        self.vao = glGenVertexArrays(1)
-        glBindVertexArray(self.vao)
+        indices = []
+        vertex_count = 0
         
-        self.vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+        for face in faces:
+            for vertex in face:
+                vertices.extend(vertex)
+                colors.extend([0.8, 0.8, 0.8])  # Default gray color
+            
+            # Two triangles per face
+            base = vertex_count
+            indices.extend([base, base+1, base+2, base, base+2, base+3])
+            vertex_count += 4
         
-        self.ebo = glGenBuffers(1)
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
+        vertices = np.array(vertices, dtype=np.float32)
+        colors = np.array(colors, dtype=np.float32)
+        indices = np.array(indices, dtype=np.uint32)
+        
+        # Create VAO
+        self.cube_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.cube_vao)
+        
+        # Vertex buffer
+        vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
+        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
+        
+        # Index buffer
+        ebo = glGenBuffers(1)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
         
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * 4, None)
+        # Attributes
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
         glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
+        glEnableVertexAttribArray(1)
         
         glBindVertexArray(0)
+        self.cube_indices = len(indices)
+    
+    def setup_grid(self):
+        """Create a grid floor"""
+        vertices = []
+        colors = []
+        
+        grid_size = 20
+        grid_step = 1.0
+        y_level = 0.0  # Floor level
+        
+        # Grid lines
+        for i in range(-grid_size, grid_size + 1):
+            # Lines parallel to X axis
+            vertices.extend([i * grid_step, y_level, -grid_size * grid_step])
+            vertices.extend([i * grid_step, y_level, grid_size * grid_step])
+            
+            # Lines parallel to Z axis
+            vertices.extend([-grid_size * grid_step, y_level, i * grid_step])
+            vertices.extend([grid_size * grid_step, y_level, i * grid_step])
+            
+            # Color for grid lines
+            if i == 0:
+                # Axis lines are brighter
+                colors.extend([0.5, 0.5, 0.5] * 4)
+            else:
+                # Regular grid lines
+                colors.extend([0.3, 0.3, 0.3] * 4)
+        
+        vertices = np.array(vertices, dtype=np.float32)
+        colors = np.array(colors, dtype=np.float32)
+        
+        # Create VAO for grid
+        self.grid_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.grid_vao)
+        
+        vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
+        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
+        
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
+        glEnableVertexAttribArray(1)
+        
+        glBindVertexArray(0)
+        self.grid_vertices = len(vertices) // 3
+    
+    def create_scene_objects(self):
+        """Create various objects in the scene"""
+        # Clear existing objects
+        self.objects = []
+        
+        # Create some cube stacks (like in the reference image)
+        # Stack 1 - L-shaped configuration
+        self.objects.extend([
+            {'pos': [-5, 0.5, -5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [-5, 0.5, -4], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [-4, 0.5, -4], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [-5, 1.5, -5], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
+        ])
+        
+        # Stack 2 - Single green cube
+        self.objects.append({
+            'pos': [0, 0.5, 0], 
+            'color': [0.2, 0.8, 0.2], 
+            'scale': [1, 1, 1]
+        })
+        
+        # Stack 3 - T-shaped configuration
+        self.objects.extend([
+            {'pos': [5, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [4, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [6, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [5, 1.5, 5], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
+        ])
+        
+        # Stack 4 - Small tower
+        self.objects.extend([
+            {'pos': [-3, 0.5, 3], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
+            {'pos': [-3, 1.5, 3], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
+            {'pos': [-3, 2.5, 3], 'color': [0.6, 0.4, 0.2], 'scale': [1, 1, 1]},
+        ])
+        
+        # Add some scattered single cubes
+        for i in range(5):
+            x = random.uniform(-8, 8)
+            z = random.uniform(-8, 8)
+            self.objects.append({
+                'pos': [x, 0.5, z],
+                'color': [random.uniform(0.4, 0.8), 
+                        random.uniform(0.4, 0.8), 
+                        random.uniform(0.4, 0.8)],
+                'scale': [1, 1, 1]
+            })
     
     def get_camera_vectors(self):
         """Calculate forward, right, and up vectors based on camera rotation"""
-        # Convert angles to radians
         pitch = math.radians(self.camera_rotation[0])
         yaw = math.radians(self.camera_rotation[1])
         
-        # Calculate forward vector
         forward = np.array([
             math.cos(pitch) * math.sin(yaw),
             -math.sin(pitch),
             -math.cos(pitch) * math.cos(yaw)
         ])
         
-        # Calculate right vector (cross product of forward and world up)
         world_up = np.array([0, 1, 0])
         right = np.cross(forward, world_up)
         right = right / np.linalg.norm(right)
         
-        # Calculate camera up vector
         up = np.cross(right, forward)
         up = up / np.linalg.norm(up)
         
@@ -197,11 +294,9 @@ class GLView(Gtk.GLArea):
         """Check if mouse click hits an object"""
         self.make_current()
         
-        # Flip Y coordinate
         viewport_height = self.get_allocated_height()
         gl_y = viewport_height - y
         
-        # Read depth value at cursor position
         depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
         
         return depth < 1.0
@@ -223,52 +318,75 @@ class GLView(Gtk.GLArea):
         # Create matrices
         aspect = width / height
         projection = self.perspective(45.0, aspect, 0.1, 100.0)
-        
-        # View matrix with camera rotation
         view = self.create_view_matrix()
         
-        # Model matrix with object transformations
-        model = np.eye(4, dtype=np.float32)
-        model = self.translate(model, self.object_position[0], 
-                             self.object_position[1], 
-                             self.object_position[2])
-        model = self.rotate_x(model, self.object_rotation[0])
-        model = self.rotate_y(model, self.object_rotation[1])
-        
-        # Set uniforms
-        model_loc = glGetUniformLocation(self.shader, "model")
+        # Set uniforms that don't change per object
         view_loc = glGetUniformLocation(self.shader, "view")
         proj_loc = glGetUniformLocation(self.shader, "projection")
-        color_loc = glGetUniformLocation(self.shader, "color")
-        
-        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
         glUniformMatrix4fv(view_loc, 1, GL_FALSE, view.T.flatten())
         glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection.T.flatten())
         
-        # Draw solid cube
-        glUniform3f(color_loc, 0.7, 0.7, 0.7)
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-        glBindVertexArray(self.vao)
-        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, None)
+        # Draw grid floor
+        self.draw_grid()
         
-        # Draw wireframe
+        # Draw all objects
+        for obj in self.objects:
+            self.draw_cube(obj['pos'], obj['scale'], obj['color'])
+        
+        glUseProgram(0)
+        
+        return True
+    
+    def draw_grid(self):
+        """Draw the grid floor"""
+        model = np.eye(4, dtype=np.float32)
+        model_loc = glGetUniformLocation(self.shader, "model")
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
+        
+        # Use vertex colors for grid
+        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
+        glUniform1f(use_vertex_color_loc, 1.0)
+        
+        glBindVertexArray(self.grid_vao)
+        glDrawArrays(GL_LINES, 0, self.grid_vertices)
+        glBindVertexArray(0)
+    
+    def draw_cube(self, position, scale, color):
+        """Draw a cube at the specified position with given scale and color"""
+        # Create model matrix
+        model = np.eye(4, dtype=np.float32)
+        model = self.translate(model, position[0], position[1], position[2])
+        model = self.scale_matrix(model, scale[0], scale[1], scale[2])
+        
+        # Set uniforms
+        model_loc = glGetUniformLocation(self.shader, "model")
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
+        
+        color_loc = glGetUniformLocation(self.shader, "objectColor")
+        glUniform3f(color_loc, color[0], color[1], color[2])
+        
+        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
+        glUniform1f(use_vertex_color_loc, 0.0)
+        
+        # Draw solid cube
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+        glBindVertexArray(self.cube_vao)
+        glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
+        
+        # Draw wireframe outline
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         glUniform3f(color_loc, 0.0, 0.0, 0.0)
-        glLineWidth(2.0)
-        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, None)
+        glLineWidth(1.5)
+        glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glLineWidth(1.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         
         glBindVertexArray(0)
-        glUseProgram(0)
-        
-        return True
     
     def create_view_matrix(self):
         """Create view matrix with camera rotations"""
         view = np.eye(4, dtype=np.float32)
         
-        # Apply camera transformations
         view = self.translate(view, -self.camera_position[0], 
                             -self.camera_position[1], 
                             -(self.camera_position[2] + self.zoom))
@@ -300,6 +418,16 @@ class GLView(Gtk.GLArea):
         ], dtype=np.float32)
         return np.dot(trans, m)
     
+    def scale_matrix(self, m, x, y, z):
+        """Apply scale to matrix"""
+        scale = np.array([
+            [x, 0, 0, 0],
+            [0, y, 0, 0],
+            [0, 0, z, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
+        return np.dot(scale, m)
+    
     def rotate_x(self, m, angle):
         """Rotate around X axis"""
         c = math.cos(math.radians(angle))
@@ -328,10 +456,7 @@ class GLView(Gtk.GLArea):
         if event.button == 1:
             self.last_mouse_pos = (event.x, event.y)
             self.grab_focus()
-            
-            # Check if we clicked on an object
             self.dragging_object = self.check_object_hit(event.x, event.y)
-            
             return True
     
     def on_mouse_release(self, widget, event):
@@ -345,16 +470,10 @@ class GLView(Gtk.GLArea):
             dx = event.x - self.last_mouse_pos[0]
             dy = event.y - self.last_mouse_pos[1]
             
-            if self.dragging_object:
-                # Move object
-                self.object_rotation[1] += dx * 0.5
-                self.object_rotation[0] += dy * 0.5
-            else:
-                # Rotate camera
-                self.camera_rotation[1] += dx * 0.5
-                self.camera_rotation[0] += dy * 0.5
-                # Clamp camera pitch
-                self.camera_rotation[0] = max(-89, min(89, self.camera_rotation[0]))
+            # Always rotate camera for now (object selection would need ray casting)
+            self.camera_rotation[1] += dx * 0.5
+            self.camera_rotation[0] += dy * 0.5
+            self.camera_rotation[0] = max(-89, min(89, self.camera_rotation[0]))
             
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
@@ -364,36 +483,28 @@ class GLView(Gtk.GLArea):
         if event.direction == Gdk.ScrollDirection.UP:
             self.zoom = max(2.0, self.zoom - 0.5)
         elif event.direction == Gdk.ScrollDirection.DOWN:
-            self.zoom = min(20.0, self.zoom + 0.5)
+            self.zoom = min(50.0, self.zoom + 0.5)
         
         self.queue_render()
         return True
     
     def on_key_press(self, widget, event):
-        """Handle key press events"""
         self.keys_pressed.add(event.keyval)
         
-        # Start continuous rendering
         if self.render_timer is None:
             self.render_timer = GLib.timeout_add(16, self.update_movement)
         
-        # Handle immediate actions
         if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
-            # Reset everything
-            self.camera_rotation = [20.0, -45.0]
-            self.camera_position = [0.0, 0.0, 0.0]
-            self.object_position = [0.0, 0.0, 0.0]
-            self.object_rotation = [0.0, 0.0]
-            self.zoom = 5.0
+            self.camera_rotation = [30.0, -45.0]
+            self.camera_position = [0.0, 3.0, 0.0]
+            self.zoom = 10.0
             self.queue_render()
             
         return True
     
     def on_key_release(self, widget, event):
-        """Handle key release events"""
         self.keys_pressed.discard(event.keyval)
         
-        # Stop continuous rendering if no keys pressed
         if not self.keys_pressed and self.render_timer:
             GLib.source_remove(self.render_timer)
             self.render_timer = None
@@ -401,96 +512,94 @@ class GLView(Gtk.GLArea):
         return True
     
     def update_movement(self):
-        """Update movement based on pressed keys - relative to camera orientation"""
-        # Get camera direction vectors
-        forward, right, up = self.get_camera_vectors()
-        
-        # Calculate movement based on camera orientation
-        movement = np.array([0.0, 0.0, 0.0])
-        
-        # Forward/backward (W/S) - move along camera's forward direction
-        if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
-            movement += forward * self.movement_speed
-        if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
-            movement -= forward * self.movement_speed
+            """Update movement based on pressed keys - relative to camera orientation"""
+            forward, right, up = self.get_camera_vectors()
             
-        # Left/right (A/D) - move along camera's right direction
-        if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
-            movement -= right * self.movement_speed
-        if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
-            movement += right * self.movement_speed
+            movement = np.array([0.0, 0.0, 0.0])
             
-        # Up/down (Q/E or Space/Shift) - move along world up
-        if Gdk.KEY_q in self.keys_pressed or Gdk.KEY_Q in self.keys_pressed:
-            movement[1] -= self.movement_speed
-        if Gdk.KEY_e in self.keys_pressed or Gdk.KEY_E in self.keys_pressed:
-            movement[1] += self.movement_speed
+            # WASD movement
+            if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
+                movement += forward * self.movement_speed
+            if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
+                movement -= forward * self.movement_speed
+            if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
+                movement -= right * self.movement_speed
+            if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
+                movement += right * self.movement_speed
+            if Gdk.KEY_space in self.keys_pressed:
+                movement[1] += self.movement_speed
+            if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
+                movement[1] -= self.movement_speed
             
-        if Gdk.KEY_space in self.keys_pressed:
-            movement[1] += self.movement_speed
-        if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
-            movement[1] -= self.movement_speed
-        
-        # Apply movement to camera position
-        self.camera_position[0] += movement[0]
-        self.camera_position[1] += movement[1]
-        self.camera_position[2] += movement[2]
-            
-        # Arrow keys to move object (unchanged)
-        if Gdk.KEY_Left in self.keys_pressed:
-            self.object_position[0] -= self.movement_speed
-        if Gdk.KEY_Right in self.keys_pressed:
-            self.object_position[0] += self.movement_speed
-        if Gdk.KEY_Up in self.keys_pressed:
-            self.object_position[1] += self.movement_speed
-        if Gdk.KEY_Down in self.keys_pressed:
-            self.object_position[1] -= self.movement_speed
-            
-        self.queue_render()
-        return True  # Continue timer
+            self.camera_position[0] += movement[0]
+            self.camera_position[1] += movement[1]
+            self.camera_position[2] += movement[2]
+                
+            self.queue_render()
+            return True
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
-        super().__init__(title="3D Cube Viewer - View-Relative Movement")
-        self.set_default_size(800, 600)
+        super().__init__(title="3D Cube World")
+        self.set_default_size(900, 700)
         
         # Create a box layout
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(box)
         
-        # Add instructions
-        label = Gtk.Label()
-        label.set_markup(
-            "<b>Mouse Controls:</b>\n" +
-            "• Click + drag on <b>object</b>: Rotate object\n" +
-            "• Click + drag on <b>empty space</b>: Rotate camera view\n" +
-            "• Scroll: Zoom in/out\n\n" +
-            "<b>Camera Movement (relative to view):</b>\n" +
-            "• W/S: Move forward/backward\n" +
-            "• A/D: Strafe left/right\n" +
-            "• Q/E or Space/Shift: Move up/down\n" +
-            "• Arrow keys: Move object\n" +
-            "• R: Reset all\n\n" +
-            "<i>Movement is now relative to where you're looking!</i>"
+        # Add title bar with info
+        info_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        info_box.set_margin_left(10)
+        info_box.set_margin_right(10)
+        info_box.set_margin_top(5)
+        info_box.set_margin_bottom(5)
+        
+        # Title
+        title_label = Gtk.Label()
+        title_label.set_markup("<b>3D Cube World</b>")
+        info_box.pack_start(title_label, False, False, 10)
+        
+        # Separator
+        info_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10)
+        
+        # Controls info
+        controls_label = Gtk.Label()
+        controls_label.set_markup(
+            "<b>Controls:</b> " +
+            "WASD: Move | Mouse: Look around | Scroll: Zoom | Space/Shift: Up/Down | R: Reset"
         )
-        label.set_margin_top(5)
-        label.set_margin_bottom(5)
-        label.set_margin_left(10)
-        label.set_margin_right(10)
-        box.pack_start(label, False, False, 0)
+        info_box.pack_start(controls_label, False, False, 0)
+        
+        box.pack_start(info_box, False, False, 0)
         
         # Add separator
-        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        box.pack_start(separator, False, False, 0)
+        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
         
         # Add GL area
         self.gl_area = GLView()
         box.pack_start(self.gl_area, True, True, 0)
         
+        # Status bar
+        self.statusbar = Gtk.Statusbar()
+        box.pack_start(self.statusbar, False, False, 0)
+        
+        # Update status periodically
+        GLib.timeout_add(100, self.update_status)
+        
         # Focus the GL area for keyboard input
         self.gl_area.grab_focus()
         
         self.connect("destroy", Gtk.main_quit)
+    
+    def update_status(self):
+        """Update status bar with camera position"""
+        if hasattr(self.gl_area, 'camera_position'):
+            pos = self.gl_area.camera_position
+            self.statusbar.pop(0)
+            self.statusbar.push(0, 
+                f"Camera Position: X: {pos[0]:.1f}, Y: {pos[1]:.1f}, Z: {pos[2]:.1f} | " +
+                f"Objects: {len(self.gl_area.objects)}")
+        return True
 
 if __name__ == "__main__":
     window = CubeWindow()
