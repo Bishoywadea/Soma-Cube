@@ -223,53 +223,47 @@ class GLView(Gtk.GLArea):
         self.grid_vertices = len(vertices) // 3
     
     def create_scene_objects(self):
-        """Create various objects in the scene"""
-        # Clear existing objects
+        """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
-        
-        # Create some cube stacks (like in the reference image)
-        # Stack 1 - L-shaped configuration
-        self.objects.extend([
-            {'pos': [-5, 0.5, -5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [-5, 0.5, -4], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [-4, 0.5, -4], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [-5, 1.5, -5], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
-        ])
-        
-        # Stack 2 - Single green cube
-        self.objects.append({
-            'pos': [0, 0.5, 0], 
-            'color': [0.2, 0.8, 0.2], 
-            'scale': [1, 1, 1]
-        })
-        
-        # Stack 3 - T-shaped configuration
-        self.objects.extend([
-            {'pos': [5, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [4, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [6, 0.5, 5], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [5, 1.5, 5], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
-        ])
-        
-        # Stack 4 - Small tower
-        self.objects.extend([
-            {'pos': [-3, 0.5, 3], 'color': [0.8, 0.6, 0.4], 'scale': [1, 1, 1]},
-            {'pos': [-3, 1.5, 3], 'color': [0.7, 0.5, 0.3], 'scale': [1, 1, 1]},
-            {'pos': [-3, 2.5, 3], 'color': [0.6, 0.4, 0.2], 'scale': [1, 1, 1]},
-        ])
-        
-        # Add some scattered single cubes
-        for i in range(5):
-            x = random.uniform(-8, 8)
-            z = random.uniform(-8, 8)
-            self.objects.append({
-                'pos': [x, 0.5, z],
-                'color': [random.uniform(0.4, 0.8), 
-                        random.uniform(0.4, 0.8), 
-                        random.uniform(0.4, 0.8)],
-                'scale': [1, 1, 1]
-            })
-    
+        cube_size = 1.0
+        base_color = [0.8, 0.6, 0.4]
+
+        # Each piece: list of relative positions (x, y, z)
+        pieces = [
+            # Piece 1: V (3 cubes, bent)
+            [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+
+            # Piece 2: L (4 cubes, 3 in a line + 1 bend)
+            [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0]],
+
+            # Piece 3: T (4 cubes, T shape)
+            [[0, 0, 0], [1, 0, 0], [2, 0, 0], [1, 1, 0]],
+
+            # Piece 4: Z (4 cubes, zig-zag)
+            [[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 0]],
+
+            # Piece 5: A (3D stair)
+            [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 1, 1]],
+
+            # Piece 6: B (corner: L in 3D)
+            [[0, 0, 0], [0, 1, 0], [1, 1, 0], [0, 1, 1]],
+
+            # Piece 7: P (chair shape)
+            [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]]
+        ]
+
+
+        # Place each piece with spacing
+        for i, piece in enumerate(pieces):
+            offset_x = (i % 4) * 4 - 6  # arrange in grid
+            offset_z = (i // 4) * 4 - 2
+            for pos in piece:
+                self.objects.append({
+                    'pos': [pos[0] + offset_x, pos[1] + 0.5, pos[2] + offset_z],
+                    'color': base_color,
+                    'scale': [cube_size] * 3
+                })
+
     def get_camera_vectors(self):
         """Calculate forward, right, and up vectors based on camera rotation"""
         pitch = math.radians(self.camera_rotation[0])
