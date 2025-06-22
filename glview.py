@@ -39,11 +39,18 @@ class GLView(Gtk.GLArea):
         self.connect("render", self.on_render)
         
         # Camera control
-        self.rotation_x = 20.0
-        self.rotation_y = -45.0
+        self.camera_rotation = [20.0, -45.0]  # Camera rotation (not object)
         self.zoom = 5.0
-        self.camera_position = [0.0, 0.0, 0.0]  # Camera position
+        self.camera_position = [0.0, 0.0, 0.0]
+        
+        # Object control
+        self.object_position = [0.0, 0.0, 0.0]
+        self.object_rotation = [0.0, 0.0]
+        
+        # Mouse control state
         self.last_mouse_pos = None
+        self.dragging_object = False
+        self.selected_object = None
         
         # Movement
         self.keys_pressed = set()
@@ -90,7 +97,7 @@ class GLView(Gtk.GLArea):
         self.setup_cube()
         
     def setup_cube(self):
-        # Cube vertices - each face needs its own vertices for proper rendering
+        # Cube vertices
         vertices = np.array([
             # Front face (z = 0.5)
             -0.5, -0.5,  0.5,
@@ -129,7 +136,7 @@ class GLView(Gtk.GLArea):
             -0.5,  0.5,  0.5,
         ], dtype=np.float32)
         
-        # Indices for drawing triangles
+        # Indices
         indices = np.array([
             # Front face
             0, 1, 2,    2, 3, 0,
@@ -145,69 +152,68 @@ class GLView(Gtk.GLArea):
             20, 21, 22, 22, 23, 20
         ], dtype=np.uint32)
         
-        # Create and bind VAO
+        # Create VAO, VBO, EBO
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
         
-        # Create and bind VBO
         self.vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
         glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
         
-        # Create and bind EBO
         self.ebo = glGenBuffers(1)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
         
-        # Set vertex attribute
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * 4, None)
         glEnableVertexAttribArray(0)
         
-        # Unbind
         glBindVertexArray(0)
+    
+    def check_object_hit(self, x, y):
+        """Check if mouse click hits an object"""
+        # Read depth at mouse position
+        self.make_current()
+        
+        # Flip Y coordinate (OpenGL has origin at bottom-left)
+        viewport_height = self.get_allocated_height()
+        gl_y = viewport_height - y
+        
+        # Read depth value at cursor position
+        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
+        
+        # If depth is less than 1.0, we hit something
+        return depth < 1.0
     
     def on_render(self, area, context):
         if not self.shader:
             return False
             
-        # Clear
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         
-        # Get dimensions
         width = self.get_allocated_width()
         height = self.get_allocated_height()
         if width == 0 or height == 0:
             return False
             
         glViewport(0, 0, width, height)
-        
-        # Use shader
         glUseProgram(self.shader)
         
         # Create matrices
         aspect = width / height
-        
-        # Projection matrix
         projection = self.perspective(45.0, aspect, 0.1, 100.0)
         
-        # View matrix - camera looking at origin from current position
-        eye = [
-            self.camera_position[0],
-            self.camera_position[1],
-            self.camera_position[2] + self.zoom
-        ]
-        center = [
-            self.camera_position[0],
-            self.camera_position[1],
-            self.camera_position[2]
-        ]
-        up = [0, 1, 0]
-        view = self.look_at(eye, center, up)
+        # View matrix with camera rotation
+        view = self.create_view_matrix()
         
-        # Model matrix - apply rotations
+        # Model matrix with object transformations
         model = np.eye(4, dtype=np.float32)
-        model = self.rotate_x(model, self.rotation_x)
-        model = self.rotate_y(model, self.rotation_y)
+        # Apply object position
+        model = self.translate(model, self.object_position[0], 
+                             self.object_position[1], 
+                             self.object_position[2])
+        # Apply object rotation
+        model = self.rotate_x(model, self.object_rotation[0])
+        model = self.rotate_y(model, self.object_rotation[1])
         
         # Set uniforms
         model_loc = glGetUniformLocation(self.shader, "model")
@@ -238,6 +244,23 @@ class GLView(Gtk.GLArea):
         
         return True
     
+    def create_view_matrix(self):
+        """Create view matrix with camera rotations"""
+        # Start with identity
+        view = np.eye(4, dtype=np.float32)
+        
+        # Apply camera transformations in reverse order
+        # First translate to camera position
+        view = self.translate(view, -self.camera_position[0], 
+                            -self.camera_position[1], 
+                            -(self.camera_position[2] + self.zoom))
+        
+        # Then apply camera rotations
+        view = self.rotate_x(view, self.camera_rotation[0])
+        view = self.rotate_y(view, self.camera_rotation[1])
+        
+        return view
+    
     def perspective(self, fovy, aspect, near, far):
         """Create perspective projection matrix"""
         f = 1.0 / math.tan(math.radians(fovy) / 2.0)
@@ -250,27 +273,15 @@ class GLView(Gtk.GLArea):
             [0, 0, -1, 0]
         ], dtype=np.float32)
     
-    def look_at(self, eye, center, up):
-        """Create look-at view matrix"""
-        eye = np.array(eye, dtype=np.float32)
-        center = np.array(center, dtype=np.float32)
-        up = np.array(up, dtype=np.float32)
-        
-        f = center - eye
-        f = f / np.linalg.norm(f)
-        
-        s = np.cross(f, up)
-        s = s / np.linalg.norm(s)
-        
-        u = np.cross(s, f)
-        
-        result = np.eye(4, dtype=np.float32)
-        result[0, :3] = s
-        result[1, :3] = u
-        result[2, :3] = -f
-        result[:3, 3] = -np.dot(result[:3, :3], eye)
-        
-        return result
+    def translate(self, m, x, y, z):
+        """Apply translation to matrix"""
+        trans = np.array([
+            [1, 0, 0, x],
+            [0, 1, 0, y],
+            [0, 0, 1, z],
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
+        return np.dot(trans, m)
     
     def rotate_x(self, m, angle):
         """Rotate around X axis"""
@@ -296,6 +307,51 @@ class GLView(Gtk.GLArea):
         ], dtype=np.float32)
         return np.dot(rot, m)
     
+    def on_mouse_press(self, widget, event):
+        if event.button == 1:
+            self.last_mouse_pos = (event.x, event.y)
+            self.grab_focus()
+            
+            # Check if we clicked on an object
+            self.dragging_object = self.check_object_hit(event.x, event.y)
+            
+            return True
+    
+    def on_mouse_release(self, widget, event):
+        if event.button == 1:
+            self.last_mouse_pos = None
+            self.dragging_object = False
+            return True
+    
+    def on_mouse_motion(self, widget, event):
+        if self.last_mouse_pos:
+            dx = event.x - self.last_mouse_pos[0]
+            dy = event.y - self.last_mouse_pos[1]
+            
+            if self.dragging_object:
+                # Move object
+                self.object_rotation[1] += dx * 0.5
+                self.object_rotation[0] += dy * 0.5
+            else:
+                # Rotate camera
+                self.camera_rotation[1] += dx * 0.5
+                self.camera_rotation[0] += dy * 0.5
+                # Clamp camera pitch
+                self.camera_rotation[0] = max(-89, min(89, self.camera_rotation[0]))
+            
+            self.queue_render()
+            self.last_mouse_pos = (event.x, event.y)
+            return True
+    
+    def on_scroll(self, widget, event):
+        if event.direction == Gdk.ScrollDirection.UP:
+            self.zoom = max(2.0, self.zoom - 0.5)
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            self.zoom = min(20.0, self.zoom + 0.5)
+        
+        self.queue_render()
+        return True
+    
     def on_key_press(self, widget, event):
         """Handle key press events"""
         self.keys_pressed.add(event.keyval)
@@ -306,9 +362,11 @@ class GLView(Gtk.GLArea):
         
         # Handle immediate actions
         if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
-            self.rotation_x = 20.0
-            self.rotation_y = -45.0
+            # Reset everything
+            self.camera_rotation = [20.0, -45.0]
             self.camera_position = [0.0, 0.0, 0.0]
+            self.object_position = [0.0, 0.0, 0.0]
+            self.object_rotation = [0.0, 0.0]
             self.zoom = 5.0
             self.queue_render()
             
@@ -351,48 +409,58 @@ class GLView(Gtk.GLArea):
         if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
             self.camera_position[1] -= self.movement_speed
             
+        # Arrow keys to move object
+        if Gdk.KEY_Left in self.keys_pressed:
+            self.object_position[0] -= self.movement_speed
+        if Gdk.KEY_Right in self.keys_pressed:
+            self.object_position[0] += self.movement_speed
+        if Gdk.KEY_Up in self.keys_pressed:
+            self.object_position[1] += self.movement_speed
+        if Gdk.KEY_Down in self.keys_pressed:
+            self.object_position[1] -= self.movement_speed
+            
         self.queue_render()
         return True  # Continue timer
-    
-    def on_mouse_press(self, widget, event):
-        if event.button == 1:
-            self.last_mouse_pos = (event.x, event.y)
-            self.grab_focus()  # Ensure we have keyboard focus
-            return True
-    
-    def on_mouse_release(self, widget, event):
-        if event.button == 1:
-            self.last_mouse_pos = None
-            return True
-    
-    def on_mouse_motion(self, widget, event):
-        if self.last_mouse_pos:
-            dx = event.x - self.last_mouse_pos[0]
-            dy = event.y - self.last_mouse_pos[1]
-            
-            self.rotation_y += dx * 0.5
-            self.rotation_x += dy * 0.5
-            
-            self.queue_render()
-            self.last_mouse_pos = (event.x, event.y)
-            return True
-    
-    def on_scroll(self, widget, event):
-        if event.direction == Gdk.ScrollDirection.UP:
-            self.zoom = max(2.0, self.zoom - 0.5)
-        elif event.direction == Gdk.ScrollDirection.DOWN:
-            self.zoom = min(20.0, self.zoom + 0.5)
-        
-        self.queue_render()
-        return True
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
-        super().__init__(title="3D Cube Viewer")
+        super().__init__(title="3D Cube Viewer - Context-Aware Controls")
         self.set_default_size(800, 600)
         
+        # Create a box layout
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(box)
+        
+        # Add instructions
+        label = Gtk.Label()
+        label.set_markup(
+            "<b>Mouse Controls:</b>\n" +
+            "• Click + drag on <b>object</b>: Rotate object\n" +
+            "• Click + drag on <b>empty space</b>: Rotate camera view\n" +
+            "• Scroll: Zoom in/out\n\n" +
+            "<b>Keyboard Controls:</b>\n" +
+            "• WASD: Move camera position\n" +
+            "• Q/E or Space/Shift: Move camera up/down\n" +
+            "• Arrow keys: Move object\n" +
+            "• R: Reset all\n" +
+            "<i>Click on the 3D view to focus for keyboard input</i>"
+        )
+        label.set_margin_top(5)
+        label.set_margin_bottom(5)
+        label.set_margin_left(10)
+        label.set_margin_right(10)
+        box.pack_start(label, False, False, 0)
+        
+        # Add separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        box.pack_start(separator, False, False, 0)
+        
+        # Add GL area
         self.gl_area = GLView()
-        self.add(self.gl_area)
+        box.pack_start(self.gl_area, True, True, 0)
+        
+        # Focus the GL area for keyboard input
+        self.gl_area.grab_focus()
         
         self.connect("destroy", Gtk.main_quit)
 
