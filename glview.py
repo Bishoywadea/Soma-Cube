@@ -225,7 +225,7 @@ class GLView(Gtk.GLArea):
     def create_scene_objects(self):
         """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
-        cube_size = 1.0
+        cube_size = 0.5
         base_color = [0.8, 0.6, 0.4]
 
         # Each piece: list of relative positions (x, y, z)
@@ -260,9 +260,17 @@ class GLView(Gtk.GLArea):
             for pos in piece:
                 self.objects.append({
                     'pos': [pos[0] + offset_x, pos[1] + 0.5, pos[2] + offset_z],
-                    'color': base_color,
+                    'color': self.get_random_color(),
                     'scale': [cube_size] * 3
                 })
+
+    def get_random_color(self):
+        """Generate a random RGB color with good visibility"""
+        return [
+            random.uniform(0.3, 0.9),  # Red
+            random.uniform(0.3, 0.9),  # Green
+            random.uniform(0.3, 0.9)   # Blue
+        ]
 
     def get_camera_vectors(self):
         """Calculate forward, right, and up vectors based on camera rotation"""
