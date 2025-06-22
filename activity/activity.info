@@ -1,0 +1,8 @@
+[Activity]
+name = SomaCube
+activity_version = 1
+bundle_id = org.sugarlabs.SomaCube
+exec = sugar-activity3 activity.SomaCube
+icon = activity-somacube
+license = GPLv2+
+repository = https://github.com/Bishoywadea/Soma-Cube.git
