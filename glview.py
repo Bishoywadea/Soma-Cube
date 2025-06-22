@@ -39,7 +39,7 @@ class GLView(Gtk.GLArea):
         self.connect("render", self.on_render)
         
         # Camera control
-        self.camera_rotation = [20.0, -45.0]  # Camera rotation (not object)
+        self.camera_rotation = [20.0, -45.0]  # Camera rotation (pitch, yaw)
         self.zoom = 5.0
         self.camera_position = [0.0, 0.0, 0.0]
         
@@ -169,19 +169,41 @@ class GLView(Gtk.GLArea):
         
         glBindVertexArray(0)
     
+    def get_camera_vectors(self):
+        """Calculate forward, right, and up vectors based on camera rotation"""
+        # Convert angles to radians
+        pitch = math.radians(self.camera_rotation[0])
+        yaw = math.radians(self.camera_rotation[1])
+        
+        # Calculate forward vector
+        forward = np.array([
+            math.cos(pitch) * math.sin(yaw),
+            -math.sin(pitch),
+            -math.cos(pitch) * math.cos(yaw)
+        ])
+        
+        # Calculate right vector (cross product of forward and world up)
+        world_up = np.array([0, 1, 0])
+        right = np.cross(forward, world_up)
+        right = right / np.linalg.norm(right)
+        
+        # Calculate camera up vector
+        up = np.cross(right, forward)
+        up = up / np.linalg.norm(up)
+        
+        return forward, right, up
+    
     def check_object_hit(self, x, y):
         """Check if mouse click hits an object"""
-        # Read depth at mouse position
         self.make_current()
         
-        # Flip Y coordinate (OpenGL has origin at bottom-left)
+        # Flip Y coordinate
         viewport_height = self.get_allocated_height()
         gl_y = viewport_height - y
         
         # Read depth value at cursor position
         depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
         
-        # If depth is less than 1.0, we hit something
         return depth < 1.0
     
     def on_render(self, area, context):
@@ -207,11 +229,9 @@ class GLView(Gtk.GLArea):
         
         # Model matrix with object transformations
         model = np.eye(4, dtype=np.float32)
-        # Apply object position
         model = self.translate(model, self.object_position[0], 
                              self.object_position[1], 
                              self.object_position[2])
-        # Apply object rotation
         model = self.rotate_x(model, self.object_rotation[0])
         model = self.rotate_y(model, self.object_rotation[1])
         
@@ -246,16 +266,13 @@ class GLView(Gtk.GLArea):
     
     def create_view_matrix(self):
         """Create view matrix with camera rotations"""
-        # Start with identity
         view = np.eye(4, dtype=np.float32)
         
-        # Apply camera transformations in reverse order
-        # First translate to camera position
+        # Apply camera transformations
         view = self.translate(view, -self.camera_position[0], 
                             -self.camera_position[1], 
                             -(self.camera_position[2] + self.zoom))
         
-        # Then apply camera rotations
         view = self.rotate_x(view, self.camera_rotation[0])
         view = self.rotate_y(view, self.camera_rotation[1])
         
@@ -384,32 +401,42 @@ class GLView(Gtk.GLArea):
         return True
     
     def update_movement(self):
-        """Update movement based on pressed keys"""
-        # Forward/backward (W/S)
+        """Update movement based on pressed keys - relative to camera orientation"""
+        # Get camera direction vectors
+        forward, right, up = self.get_camera_vectors()
+        
+        # Calculate movement based on camera orientation
+        movement = np.array([0.0, 0.0, 0.0])
+        
+        # Forward/backward (W/S) - move along camera's forward direction
         if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
-            self.camera_position[2] -= self.movement_speed
+            movement += forward * self.movement_speed
         if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
-            self.camera_position[2] += self.movement_speed
+            movement -= forward * self.movement_speed
             
-        # Left/right (A/D)
+        # Left/right (A/D) - move along camera's right direction
         if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
-            self.camera_position[0] -= self.movement_speed
+            movement -= right * self.movement_speed
         if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
-            self.camera_position[0] += self.movement_speed
+            movement += right * self.movement_speed
             
-        # Up/down (Q/E or Space/Shift)
+        # Up/down (Q/E or Space/Shift) - move along world up
         if Gdk.KEY_q in self.keys_pressed or Gdk.KEY_Q in self.keys_pressed:
-            self.camera_position[1] -= self.movement_speed
+            movement[1] -= self.movement_speed
         if Gdk.KEY_e in self.keys_pressed or Gdk.KEY_E in self.keys_pressed:
-            self.camera_position[1] += self.movement_speed
+            movement[1] += self.movement_speed
             
-        # Alternative up/down
         if Gdk.KEY_space in self.keys_pressed:
-            self.camera_position[1] += self.movement_speed
+            movement[1] += self.movement_speed
         if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
-            self.camera_position[1] -= self.movement_speed
+            movement[1] -= self.movement_speed
+        
+        # Apply movement to camera position
+        self.camera_position[0] += movement[0]
+        self.camera_position[1] += movement[1]
+        self.camera_position[2] += movement[2]
             
-        # Arrow keys to move object
+        # Arrow keys to move object (unchanged)
         if Gdk.KEY_Left in self.keys_pressed:
             self.object_position[0] -= self.movement_speed
         if Gdk.KEY_Right in self.keys_pressed:
@@ -424,7 +451,7 @@ class GLView(Gtk.GLArea):
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
-        super().__init__(title="3D Cube Viewer - Context-Aware Controls")
+        super().__init__(title="3D Cube Viewer - View-Relative Movement")
         self.set_default_size(800, 600)
         
         # Create a box layout
@@ -438,12 +465,13 @@ class CubeWindow(Gtk.Window):
             "• Click + drag on <b>object</b>: Rotate object\n" +
             "• Click + drag on <b>empty space</b>: Rotate camera view\n" +
             "• Scroll: Zoom in/out\n\n" +
-            "<b>Keyboard Controls:</b>\n" +
-            "• WASD: Move camera position\n" +
-            "• Q/E or Space/Shift: Move camera up/down\n" +
+            "<b>Camera Movement (relative to view):</b>\n" +
+            "• W/S: Move forward/backward\n" +
+            "• A/D: Strafe left/right\n" +
+            "• Q/E or Space/Shift: Move up/down\n" +
             "• Arrow keys: Move object\n" +
-            "• R: Reset all\n" +
-            "<i>Click on the 3D view to focus for keyboard input</i>"
+            "• R: Reset all\n\n" +
+            "<i>Movement is now relative to where you're looking!</i>"
         )
         label.set_margin_top(5)
         label.set_margin_bottom(5)
