@@ -54,7 +54,7 @@ class GLView(Gtk.GLArea):
         # Camera control
         self.camera_rotation = [30.0, -45.0]  # Better angle to see the floor
         self.zoom = 10.0
-        self.camera_position = [0.0, 3.0, 0.0]  # Start above the floor
+        self.camera_position = [0.0, 1.7, 0.0]   # Start above the floor
         
         # Mouse control
         self.last_mouse_pos = None
@@ -496,7 +496,7 @@ class GLView(Gtk.GLArea):
         
         if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
             self.camera_rotation = [30.0, -45.0]
-            self.camera_position = [0.0, 3.0, 0.0]
+            self.camera_position = [0.0, 1.7, 0.0]  
             self.zoom = 10.0
             self.queue_render()
             
@@ -512,31 +512,36 @@ class GLView(Gtk.GLArea):
         return True
     
     def update_movement(self):
-            """Update movement based on pressed keys - relative to camera orientation"""
-            forward, right, up = self.get_camera_vectors()
+        """Update movement based on pressed keys - relative to camera orientation"""
+        forward, right, up = self.get_camera_vectors()
+        
+        movement = np.array([0.0, 0.0, 0.0])
+        
+        # WASD movement
+        if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
+            movement += forward * self.movement_speed
+        if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
+            movement -= forward * self.movement_speed
+        if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
+            movement -= right * self.movement_speed
+        if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
+            movement += right * self.movement_speed
+        if Gdk.KEY_space in self.keys_pressed:
+            movement[1] += self.movement_speed
+        if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
+            movement[1] -= self.movement_speed
+        
+        # Apply movement
+        new_pos = np.array(self.camera_position) + movement
+        
+        # Enforce ground constraint (y >= 0)
+        if new_pos[1] < 0:
+            new_pos[1] = 0
+        
+        self.camera_position = new_pos.tolist()
             
-            movement = np.array([0.0, 0.0, 0.0])
-            
-            # WASD movement
-            if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
-                movement += forward * self.movement_speed
-            if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
-                movement -= forward * self.movement_speed
-            if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
-                movement -= right * self.movement_speed
-            if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
-                movement += right * self.movement_speed
-            if Gdk.KEY_space in self.keys_pressed:
-                movement[1] += self.movement_speed
-            if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
-                movement[1] -= self.movement_speed
-            
-            self.camera_position[0] += movement[0]
-            self.camera_position[1] += movement[1]
-            self.camera_position[2] += movement[2]
-                
-            self.queue_render()
-            return True
+        self.queue_render()
+        return True
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
