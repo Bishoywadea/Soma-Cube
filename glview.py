@@ -52,9 +52,9 @@ class GLView(Gtk.GLArea):
         self.connect("render", self.on_render)
         
         # Camera control
-        self.camera_rotation = [30.0, -45.0]  # Better angle to see the floor
+        self.camera_rotation = [0.0, 0.0]
         self.zoom = 10.0
-        self.camera_position = [0.0, 1.7, 0.0]   # Start above the floor
+        self.camera_position = [0.0, 1.7, 0.0] 
         
         # Mouse control
         self.last_mouse_pos = None
@@ -470,10 +470,13 @@ class GLView(Gtk.GLArea):
             dx = event.x - self.last_mouse_pos[0]
             dy = event.y - self.last_mouse_pos[1]
             
-            # Always rotate camera for now (object selection would need ray casting)
-            self.camera_rotation[1] += dx * 0.5
-            self.camera_rotation[0] += dy * 0.5
-            self.camera_rotation[0] = max(-89, min(89, self.camera_rotation[0]))
+            if self.dragging_object:
+                # Move object
+                self.object_rotation[1] += dx * 0.5
+                self.object_rotation[0] += dy * 0.5
+            else:
+                # Rotate camera
+                self.camera_rotation[1] += dx * 0.5
             
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
@@ -495,7 +498,7 @@ class GLView(Gtk.GLArea):
             self.render_timer = GLib.timeout_add(16, self.update_movement)
         
         if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
-            self.camera_rotation = [30.0, -45.0]
+            self.camera_rotation = [0.0, 0.0]
             self.camera_position = [0.0, 1.7, 0.0]  
             self.zoom = 10.0
             self.queue_render()
