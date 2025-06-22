@@ -226,7 +226,23 @@ class GLView(Gtk.GLArea):
         """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
         cube_size = 0.5
-        base_color = [0.8, 0.6, 0.4]
+        shadow_color = [0.1, 0.1, 0.1, 0.5]  # Semi-transparent dark color
+
+        # Create 3x3 shadow grid in center
+        grid_size = 3
+        grid_spacing = cube_size * 1.1
+        for x in range(grid_size):
+            for z in range(grid_size):
+                self.objects.append({
+                    'pos': [
+                        (x - grid_size//2) * grid_spacing, 
+                        -0.01,  # Slightly below ground for visibility
+                        (z - grid_size//2) * grid_spacing
+                    ],
+                    'color': shadow_color,
+                    'scale': [cube_size, 0.01, cube_size],  # Flat panels
+                    'is_shadow': True
+                })
 
         # Each piece: list of relative positions (x, y, z)
         pieces = [
@@ -253,15 +269,24 @@ class GLView(Gtk.GLArea):
         ]
 
 
-        # Place each piece with spacing
+        # Place all pieces on the left side in a vertical queue
+        queue_z = -5.0  # Z position for the queue
+        horizontal_spacing = 5.0
+        
         for i, piece in enumerate(pieces):
-            offset_x = (i % 4) * 4 - 6  # arrange in grid
-            offset_z = (i // 4) * 4 - 2
-            for pos in piece:
+            piece_color = self.get_random_color()
+            piece_x_offset = i * horizontal_spacing - (len(pieces) * horizontal_spacing)/2
+            
+            for cube_pos in piece:
                 self.objects.append({
-                    'pos': [pos[0] + offset_x, pos[1] + 0.5, pos[2] + offset_z],
-                    'color': self.get_random_color(),
-                    'scale': [cube_size] * 3
+                    'pos': [
+                        piece_x_offset + cube_pos[0] * cube_size,
+                        cube_size/2 + cube_pos[1] * cube_size,
+                        queue_z + cube_pos[2] * cube_size
+                    ],
+                    'color': piece_color,
+                    'scale': [cube_size] * 3,
+                    'piece_id': i  # Identify which piece this cube belongs to
                 })
 
     def get_random_color(self):
