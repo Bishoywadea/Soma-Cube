@@ -42,18 +42,28 @@ class GLView(Gtk.GLArea):
         self.rotation_x = 20.0
         self.rotation_y = -45.0
         self.zoom = 5.0
+        self.camera_position = [0.0, 0.0, 0.0]  # Camera position
         self.last_mouse_pos = None
+        
+        # Movement
+        self.keys_pressed = set()
+        self.movement_speed = 0.1
+        self.render_timer = None
         
         # Set up events
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
                        Gdk.EventMask.BUTTON_RELEASE_MASK |
                        Gdk.EventMask.POINTER_MOTION_MASK |
-                       Gdk.EventMask.SCROLL_MASK)
+                       Gdk.EventMask.SCROLL_MASK |
+                       Gdk.EventMask.KEY_PRESS_MASK |
+                       Gdk.EventMask.KEY_RELEASE_MASK)
         
         self.connect("button-press-event", self.on_mouse_press)
         self.connect("button-release-event", self.on_mouse_release)
         self.connect("motion-notify-event", self.on_mouse_motion)
         self.connect("scroll-event", self.on_scroll)
+        self.connect("key-press-event", self.on_key_press)
+        self.connect("key-release-event", self.on_key_release)
         
         self.set_can_focus(True)
         
@@ -180,9 +190,17 @@ class GLView(Gtk.GLArea):
         # Projection matrix
         projection = self.perspective(45.0, aspect, 0.1, 100.0)
         
-        # View matrix - camera looking at origin
-        eye = [0, 0, self.zoom]
-        center = [0, 0, 0]
+        # View matrix - camera looking at origin from current position
+        eye = [
+            self.camera_position[0],
+            self.camera_position[1],
+            self.camera_position[2] + self.zoom
+        ]
+        center = [
+            self.camera_position[0],
+            self.camera_position[1],
+            self.camera_position[2]
+        ]
         up = [0, 1, 0]
         view = self.look_at(eye, center, up)
         
@@ -278,9 +296,68 @@ class GLView(Gtk.GLArea):
         ], dtype=np.float32)
         return np.dot(rot, m)
     
+    def on_key_press(self, widget, event):
+        """Handle key press events"""
+        self.keys_pressed.add(event.keyval)
+        
+        # Start continuous rendering
+        if self.render_timer is None:
+            self.render_timer = GLib.timeout_add(16, self.update_movement)
+        
+        # Handle immediate actions
+        if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
+            self.rotation_x = 20.0
+            self.rotation_y = -45.0
+            self.camera_position = [0.0, 0.0, 0.0]
+            self.zoom = 5.0
+            self.queue_render()
+            
+        return True
+    
+    def on_key_release(self, widget, event):
+        """Handle key release events"""
+        self.keys_pressed.discard(event.keyval)
+        
+        # Stop continuous rendering if no keys pressed
+        if not self.keys_pressed and self.render_timer:
+            GLib.source_remove(self.render_timer)
+            self.render_timer = None
+            
+        return True
+    
+    def update_movement(self):
+        """Update movement based on pressed keys"""
+        # Forward/backward (W/S)
+        if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
+            self.camera_position[2] -= self.movement_speed
+        if Gdk.KEY_s in self.keys_pressed or Gdk.KEY_S in self.keys_pressed:
+            self.camera_position[2] += self.movement_speed
+            
+        # Left/right (A/D)
+        if Gdk.KEY_a in self.keys_pressed or Gdk.KEY_A in self.keys_pressed:
+            self.camera_position[0] -= self.movement_speed
+        if Gdk.KEY_d in self.keys_pressed or Gdk.KEY_D in self.keys_pressed:
+            self.camera_position[0] += self.movement_speed
+            
+        # Up/down (Q/E or Space/Shift)
+        if Gdk.KEY_q in self.keys_pressed or Gdk.KEY_Q in self.keys_pressed:
+            self.camera_position[1] -= self.movement_speed
+        if Gdk.KEY_e in self.keys_pressed or Gdk.KEY_E in self.keys_pressed:
+            self.camera_position[1] += self.movement_speed
+            
+        # Alternative up/down
+        if Gdk.KEY_space in self.keys_pressed:
+            self.camera_position[1] += self.movement_speed
+        if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
+            self.camera_position[1] -= self.movement_speed
+            
+        self.queue_render()
+        return True  # Continue timer
+    
     def on_mouse_press(self, widget, event):
         if event.button == 1:
             self.last_mouse_pos = (event.x, event.y)
+            self.grab_focus()  # Ensure we have keyboard focus
             return True
     
     def on_mouse_release(self, widget, event):
