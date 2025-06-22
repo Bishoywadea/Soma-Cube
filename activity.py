@@ -1,32 +1,14 @@
-import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
 from sugar3.activity import activity
 from sugar3.graphics.toolbarbox import ToolbarBox
-from sugar3.activity.widgets import ActivityToolbarButton
-from sugar3.activity.widgets import StopButton
-from sugar3.graphics.toolbutton import ToolButton
+from sugar3.activity.widgets import ActivityToolbarButton, StopButton
+from gi.repository import Gtk
+from glview import GLView 
 
 class SomaCube(activity.Activity):
     def __init__(self, handle):
         activity.Activity.__init__(self, handle)
-        
-        # Create toolbar
         self._create_toolbar()
-        
-        # Create a simple label
-        label = Gtk.Label()
-        label.set_markup("<span size='x-large' weight='bold'>Soma Cube</span>")
-        label.set_halign(Gtk.Align.CENTER)
-        label.set_valign(Gtk.Align.CENTER)
-        
-        # Create a main box to hold everything
-        main_box = Gtk.VBox()
-        main_box.pack_start(label, True, True, 0)
-        
-        # Add to the activity canvas
-        self.set_canvas(main_box)
-        main_box.show_all()
+        self._setup_content()
     
     def _create_toolbar(self):
         toolbar_box = ToolbarBox()
@@ -34,7 +16,6 @@ class SomaCube(activity.Activity):
         # Activity button
         activity_button = ActivityToolbarButton(self)
         toolbar_box.toolbar.insert(activity_button, -1)
-        activity_button.show()
         
         # Separator
         separator = Gtk.SeparatorToolItem()
@@ -45,7 +26,27 @@ class SomaCube(activity.Activity):
         # Stop button
         stop_button = StopButton(self)
         toolbar_box.toolbar.insert(stop_button, -1)
-        stop_button.show()
         
         self.set_toolbar_box(toolbar_box)
         toolbar_box.show_all()
+    
+    def _setup_content(self):
+        # Create main container
+        main_box = Gtk.VBox()
+        
+        # Create our OpenGL view
+        self.gl_view = GLView()
+        self.gl_view.set_size_request(600, 400)
+        
+        # Add some instructions
+        instructions = Gtk.Label()
+        instructions.set_markup(
+            "<span size='large'>Rotate view with mouse</span>")
+        instructions.set_halign(Gtk.Align.CENTER)
+        instructions.set_margin_bottom(10)
+        
+        main_box.pack_start(self.gl_view, True, True, 0)
+        main_box.pack_start(instructions, False, False, 0)
+        
+        self.set_canvas(main_box)
+        main_box.show_all()
