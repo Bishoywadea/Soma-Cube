@@ -1,0 +1,6 @@
+*~
+*.pyc
+*.pyo
+dist/
+locale/
+__pycache__/

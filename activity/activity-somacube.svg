@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+  <!ENTITY stroke_color "#666666">
+  <!ENTITY fill_color "#FFFFFF">
+]>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="55px" height="55px" viewBox="0 0 55 55">
+
+  <path fill-rule="evenodd" fill="&stroke_color;" d="
+    M 27.5,49.5
+    L 10.5,40.5
+    L 10.5,31.5
+    L 19,27
+    L 27.5,22.5
+    L 36,27
+    L 44.5,31.5
+    L 44.5,40.5
+    L 27.5,49.5 Z
+
+    M 27.5,24.5
+    L 22,27
+    L 27.5,29.5
+    L 33,27
+    L 27.5,24.5 Z
+
+    M 19,29
+    L 13.5,31.5
+    L 19,34
+    L 24.5,31.5
+    L 19,29 Z
+
+    M 36,29
+    L 30.5,31.5
+    L 36,34
+    L 41.5,31.5
+    L 36,29 Z
+
+    M 19,38
+    L 13.5,40.5
+    L 19,43
+    L 24.5,40.5
+    L 19,38 Z
+
+    M 36,38
+    L 30.5,40.5
+    L 36,43
+    L 41.5,40.5
+    L 36,38 Z
+  "/>
+
+</svg>
