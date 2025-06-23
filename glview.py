@@ -33,12 +33,13 @@ out vec4 frag_color;
 
 uniform vec3 objectColor;
 uniform float useVertexColor;
+uniform float alpha = 1.0;  // Add alpha uniform
 
 void main() {
     if (useVertexColor > 0.5) {
         frag_color = vec4(vertexColor, 1.0);
     } else {
-        frag_color = vec4(objectColor, 1.0);
+        frag_color = vec4(objectColor, alpha);  // Use alpha value
     }
 }
 """
@@ -90,6 +91,9 @@ class GLView(Gtk.GLArea):
         self.cube_vao = None
         self.grid_vao = None
         self.shader = None
+
+        self.selected_piece = None
+        self.drag_offset = None
 
     def on_realize(self, area):
         self.make_current()
@@ -357,12 +361,24 @@ class GLView(Gtk.GLArea):
         # Draw grid floor
         self.draw_grid()
         
-        # Draw all objects
+        # Enable blending for shadows (should be done here, before drawing shadows)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        
+        # First draw all shadow cubes
         for obj in self.objects:
-            self.draw_cube(obj['pos'], obj['scale'], obj['color'])
+            if obj.get('is_shadow', False):
+                self.draw_shadow_cube(obj['pos'], obj['scale'], obj['color'])
+        
+        # Disable blending for regular objects
+        glDisable(GL_BLEND)
+        
+        # Then draw all regular cubes
+        for obj in self.objects:
+            if not obj.get('is_shadow', False):
+                self.draw_cube(obj['pos'], obj['scale'], obj['color'])
         
         glUseProgram(0)
-        
         return True
     
     def draw_grid(self):
@@ -484,28 +500,52 @@ class GLView(Gtk.GLArea):
         if event.button == 1:
             self.last_mouse_pos = (event.x, event.y)
             self.grab_focus()
-            self.dragging_object = self.check_object_hit(event.x, event.y)
+            
+            # Get clicked object
+            clicked_obj = self.get_object_at_position(event.x, event.y)
+            if clicked_obj and 'piece_id' in clicked_obj:
+                self.selected_piece = clicked_obj['piece_id']
+                self.drag_offset = None 
+            else:
+                self.selected_piece = None
+                
             return True
     
     def on_mouse_release(self, widget, event):
         if event.button == 1:
+            if self.selected_piece is not None:
+                self.snap_to_grid(self.selected_piece)
+                
             self.last_mouse_pos = None
-            self.dragging_object = False
+            self.selected_piece = None
             return True
     
     def on_mouse_motion(self, widget, event):
-        if self.last_mouse_pos:
+        if self.last_mouse_pos and self.selected_piece is not None:
             dx = event.x - self.last_mouse_pos[0]
             dy = event.y - self.last_mouse_pos[1]
             
-            if self.dragging_object:
-                # Move object
-                self.object_rotation[1] += dx * 0.5
-                self.object_rotation[0] += dy * 0.5
-            else:
-                # Rotate camera
-                self.camera_rotation[1] += dx * 0.5
+            # Get camera vectors
+            forward, right, up = self.get_camera_vectors()
             
+            # Calculate movement in world space
+            move_right = right * dx * 0.01
+            move_up = up * -dy * 0.01  # Invert Y axis
+            
+            # Combine movement
+            delta = move_right + move_up
+            
+            # Move the entire piece
+            self.move_piece(self.selected_piece, delta)
+            
+            self.queue_render()
+            self.last_mouse_pos = (event.x, event.y)
+            return True
+        elif self.last_mouse_pos:
+            # Original camera rotation code
+            dx = event.x - self.last_mouse_pos[0]
+            dy = event.y - self.last_mouse_pos[1]
+            self.camera_rotation[1] += dx * 0.5
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
             return True
@@ -573,6 +613,132 @@ class GLView(Gtk.GLArea):
             
         self.queue_render()
         return True
+
+    def get_object_at_position(self, x, y):
+        """Get the object under mouse cursor"""
+        self.make_current()
+        
+        # Read depth buffer at mouse position
+        viewport_height = self.get_allocated_height()
+        gl_y = viewport_height - y
+        
+        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
+        
+        if depth >= 1.0:
+            return None
+        
+        # Convert mouse position to world coordinates
+        aspect = self.get_allocated_width() / self.get_allocated_height()
+        projection = self.perspective(45.0, aspect, 0.1, 100.0)
+        view = self.create_view_matrix()
+        
+        # Unproject the point
+        mouse_pos = self.unproject(x, gl_y, depth, view, projection)
+        
+        # Find closest object
+        closest_obj = None
+        min_dist = float('inf')
+        
+        for obj in self.objects:
+            if obj.get('is_shadow', False):
+                continue
+                
+            obj_pos = np.array(obj['pos'])
+            dist = np.linalg.norm(mouse_pos - obj_pos)
+            
+            if dist < min_dist:
+                min_dist = dist
+                closest_obj = obj
+        
+        return closest_obj
+
+    def unproject(self, winx, winy, depth, view, projection):
+        """Convert window coordinates to world coordinates"""
+        # Calculate inverse matrix
+        inv = np.linalg.inv(np.dot(projection, view))
+        
+        # Normalized device coordinates
+        x = (2.0 * winx) / self.get_allocated_width() - 1.0
+        y = (2.0 * winy) / self.get_allocated_height() - 1.0
+        z = 2.0 * depth - 1.0
+        
+        # Homogeneous coordinates
+        point = np.array([x, y, z, 1.0])
+        
+        # Transform to world coordinates
+        world = np.dot(inv, point)
+        
+        # Perspective division
+        world /= world[3]
+        
+        return world[:3]
+
+    def get_piece_cubes(self, piece_id):
+        """Get all cubes belonging to a piece"""
+        return [obj for obj in self.objects if obj.get('piece_id', None) == piece_id]
+
+    def move_piece(self, piece_id, delta):
+        """Move all cubes in a piece by delta"""
+        for obj in self.objects:
+            if obj.get('piece_id', None) == piece_id:
+                obj['pos'][0] += delta[0]
+                obj['pos'][1] += delta[1]
+                obj['pos'][2] += delta[2]
+
+    def snap_to_grid(self, piece_id):
+        """Snap piece to nearest grid position"""
+        cubes = self.get_piece_cubes(piece_id)
+        if not cubes:
+            return
+            
+        # Find average position of piece
+        avg_pos = np.mean([cube['pos'] for cube in cubes], axis=0)
+        
+        # Calculate nearest grid position
+        grid_size = 0.6  # Should match your grid spacing
+        snapped_pos = [
+            round(avg_pos[0] / grid_size) * grid_size,
+            round(avg_pos[1] / grid_size) * grid_size,
+            round(avg_pos[2] / grid_size) * grid_size
+        ]
+        
+        # Calculate delta to move piece
+        delta = np.array(snapped_pos) - avg_pos
+        
+        # Move piece
+        self.move_piece(piece_id, delta)
+
+    def draw_shadow_cube(self, position, scale, color):
+        """Draw a shadow cube with transparency"""
+        # Enable blending for shadows
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        
+        # Create model matrix
+        model = np.eye(4, dtype=np.float32)
+        model = self.translate(model, position[0], position[1], position[2])
+        model = self.scale_matrix(model, scale[0], scale[1], scale[2])
+        
+        # Set uniforms
+        model_loc = glGetUniformLocation(self.shader, "model")
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
+        
+        color_loc = glGetUniformLocation(self.shader, "objectColor")
+        glUniform3f(color_loc, color[0], color[1], color[2])
+        
+        alpha_loc = glGetUniformLocation(self.shader, "alpha")
+        glUniform1f(alpha_loc, color[3] if len(color) > 3 else 1.0)
+        
+        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
+        glUniform1f(use_vertex_color_loc, 0.0)
+        
+        # Draw solid cube (no wireframe for shadows)
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+        glBindVertexArray(self.cube_vao)
+        glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
+        glBindVertexArray(0)
+        
+        glDisable(GL_BLEND)
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
