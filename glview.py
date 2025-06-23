@@ -514,10 +514,32 @@ class GLView(Gtk.GLArea):
     def on_mouse_release(self, widget, event):
         if event.button == 1:
             if self.selected_piece is not None:
+                # Snap to grid
                 self.snap_to_grid(self.selected_piece)
                 
+                # Check if placement is valid
+                if self.is_valid_placement(self.selected_piece) and not self.check_collision(self.selected_piece):
+                    # Valid placement - maybe add a sound effect or visual feedback
+                    print(f"Piece {self.selected_piece} placed successfully!")
+                    
+                    # Check if puzzle is complete
+                    if self.check_puzzle_complete():
+                        print("Puzzle completed! Congratulations!")
+                        # You could add a celebration animation here
+                else:
+                    # Invalid placement - move piece back or show error
+                    print(f"Invalid placement for piece {self.selected_piece}")
+                    # Optionally move piece back to queue
+            
             self.last_mouse_pos = None
             self.selected_piece = None
+            
+            # Reset all shadow colors
+            for obj in self.objects:
+                if obj.get('is_shadow', False):
+                    obj['color'] = [0.05, 0.05, 0.05, 0.7]
+            
+            self.queue_render()
             return True
     
     def on_mouse_motion(self, widget, event):
@@ -538,6 +560,9 @@ class GLView(Gtk.GLArea):
             # Move the entire piece
             self.move_piece(self.selected_piece, delta)
             
+            # Auto-align while dragging if close to grid
+            self.preview_snap(self.selected_piece)
+            
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
             return True
@@ -549,7 +574,7 @@ class GLView(Gtk.GLArea):
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
             return True
-    
+
     def on_scroll(self, widget, event):
         if event.direction == Gdk.ScrollDirection.UP:
             self.zoom = max(2.0, self.zoom - 0.5)
@@ -686,27 +711,65 @@ class GLView(Gtk.GLArea):
                 obj['pos'][2] += delta[2]
 
     def snap_to_grid(self, piece_id):
-        """Snap piece to nearest grid position"""
+        """Snap piece to nearest valid grid position with edge alignment"""
         cubes = self.get_piece_cubes(piece_id)
         if not cubes:
             return
+        
+        grid_size = 0.6  # Grid spacing
+        snap_threshold = grid_size * 0.3  # Distance threshold for snapping
+        
+        # Get shadow cube positions (the 3x3x3 grid)
+        shadow_positions = []
+        for obj in self.objects:
+            if obj.get('is_shadow', False):
+                shadow_positions.append(obj['pos'])
+        
+        # Find the best alignment by checking different snap positions
+        best_position = None
+        best_score = float('inf')
+        
+        # Get current piece bounds
+        piece_positions = [cube['pos'] for cube in cubes]
+        min_pos = np.min(piece_positions, axis=0)
+        max_pos = np.max(piece_positions, axis=0)
+        piece_center = (min_pos + max_pos) / 2
+        
+        # Try snapping to different grid positions
+        for shadow_pos in shadow_positions:
+            # Calculate potential snap position
+            snap_x = round((piece_center[0] - shadow_pos[0]) / grid_size) * grid_size + shadow_pos[0]
+            snap_y = round((piece_center[1] - shadow_pos[1]) / grid_size) * grid_size + shadow_pos[1]
+            snap_z = round((piece_center[2] - shadow_pos[2]) / grid_size) * grid_size + shadow_pos[2]
             
-        # Find average position of piece
-        avg_pos = np.mean([cube['pos'] for cube in cubes], axis=0)
+            potential_snap = np.array([snap_x, snap_y, snap_z])
+            
+            # Calculate how well this position aligns
+            distance = np.linalg.norm(piece_center - potential_snap)
+            
+            # Check if any cube would align perfectly with shadow cubes
+            alignment_bonus = 0
+            for cube in cubes:
+                cube_offset = np.array(cube['pos']) - piece_center
+                new_cube_pos = potential_snap + cube_offset
+                
+                # Check alignment with shadow cubes
+                for shadow_pos_check in shadow_positions:
+                    if np.allclose(new_cube_pos, shadow_pos_check, atol=0.01):
+                        alignment_bonus += 10  # Bonus for perfect alignment
+            
+            score = distance - alignment_bonus
+            
+            if score < best_score:
+                best_score = score
+                best_position = potential_snap
         
-        # Calculate nearest grid position
-        grid_size = 0.6  # Should match your grid spacing
-        snapped_pos = [
-            round(avg_pos[0] / grid_size) * grid_size,
-            round(avg_pos[1] / grid_size) * grid_size,
-            round(avg_pos[2] / grid_size) * grid_size
-        ]
-        
-        # Calculate delta to move piece
-        delta = np.array(snapped_pos) - avg_pos
-        
-        # Move piece
-        self.move_piece(piece_id, delta)
+        # Apply the best snap position if it's within threshold
+        if best_position is not None:
+            delta = best_position - piece_center
+            if np.linalg.norm(delta) < snap_threshold * 3:  # Allow snapping from farther away
+                self.move_piece(piece_id, delta)
+                self.queue_render()
 
     def draw_shadow_cube(self, position, scale, color):
         """Draw a shadow cube with transparency"""
@@ -739,6 +802,110 @@ class GLView(Gtk.GLArea):
         glBindVertexArray(0)
         
         glDisable(GL_BLEND)
+
+    def preview_snap(self, piece_id):
+        """Show preview of where piece will snap (visual feedback)"""
+        cubes = self.get_piece_cubes(piece_id)
+        if not cubes:
+            return
+        
+        grid_size = 0.6
+        preview_threshold = grid_size * 0.5  # Show preview when this close
+        
+        # Get shadow cube positions
+        shadow_positions = []
+        for obj in self.objects:
+            if obj.get('is_shadow', False):
+                shadow_positions.append(np.array(obj['pos']))
+        
+        # Check if any cube is near a shadow position
+        for cube in cubes:
+            cube_pos = np.array(cube['pos'])
+            
+            for shadow_pos in shadow_positions:
+                distance = np.linalg.norm(cube_pos - shadow_pos)
+                
+                if distance < preview_threshold:
+                    # Highlight this shadow cube (make it brighter)
+                    for obj in self.objects:
+                        if obj.get('is_shadow', False) and np.allclose(obj['pos'], shadow_pos):
+                            # Temporarily brighten the shadow
+                            obj['color'] = [0.2, 0.2, 0.2, 0.7]
+                else:
+                    # Reset shadow color
+                    for obj in self.objects:
+                        if obj.get('is_shadow', False) and np.allclose(obj['pos'], shadow_pos):
+                            obj['color'] = [0.05, 0.05, 0.05, 0.7]
+
+    def is_valid_placement(self, piece_id):
+        """Check if current piece placement is valid (all cubes align with shadow grid)"""
+        cubes = self.get_piece_cubes(piece_id)
+        if not cubes:
+            return False
+        
+        shadow_positions = []
+        for obj in self.objects:
+            if obj.get('is_shadow', False):
+                shadow_positions.append(np.array(obj['pos']))
+        
+        # Check if all piece cubes align with shadow positions
+        for cube in cubes:
+            cube_pos = np.array(cube['pos'])
+            aligned = False
+            
+            for shadow_pos in shadow_positions:
+                if np.allclose(cube_pos, shadow_pos, atol=0.1):
+                    aligned = True
+                    break
+            
+            if not aligned:
+                return False
+        
+        return True
+
+    def check_collision(self, piece_id):
+        """Check if piece collides with other placed pieces"""
+        piece_cubes = self.get_piece_cubes(piece_id)
+        if not piece_cubes:
+            return False
+        
+        # Get positions of all other pieces
+        other_positions = []
+        for obj in self.objects:
+            if not obj.get('is_shadow', False) and obj.get('piece_id', None) != piece_id:
+                other_positions.append(np.array(obj['pos']))
+        
+        # Check for collisions
+        for cube in piece_cubes:
+            cube_pos = np.array(cube['pos'])
+            for other_pos in other_positions:
+                if np.allclose(cube_pos, other_pos, atol=0.1):
+                    return True  # Collision detected
+        
+        return False
+
+    def check_puzzle_complete(self):
+        """Check if all 27 positions in the 3x3x3 cube are filled"""
+        shadow_positions = []
+        filled_positions = []
+        
+        for obj in self.objects:
+            if obj.get('is_shadow', False):
+                shadow_positions.append(tuple(obj['pos']))
+            elif 'piece_id' in obj:
+                filled_positions.append(tuple(obj['pos']))
+        
+        # Check if all shadow positions are filled
+        for shadow_pos in shadow_positions:
+            filled = False
+            for filled_pos in filled_positions:
+                if np.allclose(shadow_pos, filled_pos, atol=0.1):
+                    filled = True
+                    break
+            if not filled:
+                return False
+        
+        return True
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
