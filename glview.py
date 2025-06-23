@@ -225,24 +225,25 @@ class GLView(Gtk.GLArea):
     def create_scene_objects(self):
         """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
-        cube_size = 0.5
-        shadow_color = [0.1, 0.1, 0.1, 0.5]  # Semi-transparent dark color
-
-        # Create 3x3 shadow grid in center
+        cube_size = 0.6
         grid_size = 3
-        grid_spacing = cube_size * 1.1
+        grid_spacing = cube_size
+        shadow_color = [0.05, 0.05, 0.05, 0.7]
+        base_y = 1.2
+
         for x in range(grid_size):
             for z in range(grid_size):
-                self.objects.append({
-                    'pos': [
-                        (x - grid_size//2) * grid_spacing, 
-                        -0.01,  # Slightly below ground for visibility
-                        (z - grid_size//2) * grid_spacing
-                    ],
-                    'color': shadow_color,
-                    'scale': [cube_size, 0.01, cube_size],  # Flat panels
-                    'is_shadow': True
-                })
+                for y in range(grid_size):
+                    self.objects.append({
+                        'pos': [
+                            (x - 1) * grid_spacing, 
+                            base_y + (y - 1) * grid_spacing,
+                            (z - 1) * grid_spacing
+                        ],
+                        'color': shadow_color,
+                        'scale': [cube_size * 0.98] * 3, 
+                        'is_shadow': True
+                    })
 
         # Each piece: list of relative positions (x, y, z)
         pieces = [
