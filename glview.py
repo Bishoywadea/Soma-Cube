@@ -890,7 +890,7 @@ class GLView(Gtk.GLArea):
     def check_bounds(self, positions):
         """Check if positions are within reasonable bounds"""
         for pos in positions:
-            if abs(pos[0]) > 15 or pos[1] < -1 or pos[1] > 10 or abs(pos[2]) > 15:
+            if abs(pos[0]) > 20 or pos[1] < 0 or pos[1] > 10 or abs(pos[2]) > 15:
                 return False
         return True
 
