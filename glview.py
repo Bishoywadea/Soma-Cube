@@ -866,12 +866,33 @@ class GLView(Gtk.GLArea):
         return [obj for obj in self.objects if obj.get('piece_id', None) == piece_id]
 
     def move_piece(self, piece_id, delta):
-        """Move all cubes in a piece by delta"""
+        """Move all cubes in a piece by delta with collision checking"""
+        # First, calculate all new positions
+        test_positions = []
+        piece_cubes = []
+        
         for obj in self.objects:
             if obj.get('piece_id', None) == piece_id:
-                obj['pos'][0] += delta[0]
-                obj['pos'][1] += delta[1]
-                obj['pos'][2] += delta[2]
+                piece_cubes.append(obj)
+                new_pos = [
+                    obj['pos'][0] + delta[0],
+                    obj['pos'][1] + delta[1],
+                    obj['pos'][2] + delta[2]
+                ]
+                test_positions.append(new_pos)
+        
+        # Check if move is valid
+        if not self.check_collision_at_positions(piece_id, test_positions):
+            # Apply the movement
+            for i, cube in enumerate(piece_cubes):
+                cube['pos'] = test_positions[i]
+
+    def check_bounds(self, positions):
+        """Check if positions are within reasonable bounds"""
+        for pos in positions:
+            if abs(pos[0]) > 15 or pos[1] < -1 or pos[1] > 10 or abs(pos[2]) > 15:
+                return False
+        return True
 
     def snap_to_grid(self, piece_id):
         """Snap piece to nearest valid grid position with edge alignment"""
@@ -1071,17 +1092,20 @@ class GLView(Gtk.GLArea):
         return True
     
     def move_object_discrete(self, obj, direction):
-        """Move object in discrete steps"""
+        """Move object in discrete steps with collision and bounds detection"""
         if obj and not obj.get('is_shadow', False):
             grid_step = 1.0
             
             if 'piece_id' in obj:
                 piece_id = obj['piece_id']
                 
-                # Test the new position first
+                # Calculate new positions
                 test_positions = []
+                piece_cubes = []
+                
                 for cube in self.objects:
                     if cube.get('piece_id') == piece_id:
+                        piece_cubes.append(cube)
                         new_pos = [
                             cube['pos'][0] + direction[0] * grid_step,
                             cube['pos'][1] + direction[1] * grid_step,
@@ -1089,17 +1113,22 @@ class GLView(Gtk.GLArea):
                         ]
                         test_positions.append(new_pos)
                 
-                # Check if any new position would cause collision
-                if self.is_valid_movement(piece_id, test_positions):
+                # Check bounds and collisions
+                if self.check_bounds(test_positions) and not self.check_collision_at_positions(piece_id, test_positions):
                     # Apply the movement
-                    for cube in self.objects:
-                        if cube.get('piece_id') == piece_id:
-                            cube['pos'][0] += direction[0] * grid_step
-                            cube['pos'][1] += direction[1] * grid_step
-                            cube['pos'][2] += direction[2] * grid_step
+                    for i, cube in enumerate(piece_cubes):
+                        cube['pos'] = test_positions[i]
+                else:
+                    if not self.check_bounds(test_positions):
+                        print("Out of bounds!")
+                        self.statusbar.push(0, "Out of bounds!")
+                    else:
+                        print("Collision detected!")
+                        self.statusbar.push(0, "Collision detected!")
+                    GLib.timeout_add(2000, lambda: self.statusbar.pop(0))
 
-    def rotate_object(self, obj, axis, angle=90):  # Default to 90 degrees
-        """Rotate entire piece around its center in 90-degree increments"""
+    def rotate_object(self, obj, axis, angle=90):
+        """Rotate entire piece around its center with collision detection"""
         if obj and not obj.get('is_shadow', False):
             if 'piece_id' in obj:
                 piece_id = obj['piece_id']
@@ -1112,11 +1141,13 @@ class GLView(Gtk.GLArea):
                 center = np.mean(positions, axis=0)
                 center = np.round(center)
                 
-                # Test the rotation first
+                # Calculate new positions after rotation
                 test_positions = []
                 for cube in piece_cubes:
+                    # Translate to origin
                     relative_pos = np.array(cube['pos']) - center
                     
+                    # Apply rotation
                     if axis == 'x':
                         rotated = self.rotate_vector_x(relative_pos, 90)
                     elif axis == 'y':
@@ -1124,11 +1155,13 @@ class GLView(Gtk.GLArea):
                     elif axis == 'z':
                         rotated = self.rotate_vector_z(relative_pos, 90)
                     
+                    # Translate back and round
                     new_pos = rotated + center
-                    test_positions.append([round(p) for p in new_pos.tolist()])
+                    new_pos = [round(p) for p in new_pos.tolist()]
+                    test_positions.append(new_pos)
                 
-                # Check if rotation is valid
-                if self.is_valid_rotation(piece_id, test_positions):
+                # Check if rotation is valid (no collisions)
+                if not self.check_collision_at_positions(piece_id, test_positions):
                     # Apply the rotation
                     for i, cube in enumerate(piece_cubes):
                         cube['pos'] = test_positions[i]
@@ -1138,6 +1171,10 @@ class GLView(Gtk.GLArea):
                     if piece_key not in self.object_rotations:
                         self.object_rotations[piece_key] = {'x': 0, 'y': 0, 'z': 0}
                     self.object_rotations[piece_key][axis] = (self.object_rotations[piece_key][axis] + 90) % 360
+                else:
+                    print("Collision detected! Rotation blocked.")
+                    self.statusbar.push(0, "Collision detected! Rotation blocked.")
+                    GLib.timeout_add(2000, lambda: self.statusbar.pop(0))
 
     def rotate_vector_x(self, vec, angle):
         """Rotate a 3D vector around X axis"""
@@ -1179,6 +1216,27 @@ class GLView(Gtk.GLArea):
             round(position[1] / self.grid_step) * self.grid_step,
             round(position[2] / self.grid_step) * self.grid_step
         ]
+    
+    def check_collision_at_positions(self, piece_id, test_positions):
+        """Check if any of the test positions collide with existing pieces"""
+        # Get all occupied positions except from the current piece
+        occupied_positions = set()
+        
+        for obj in self.objects:
+            if (not obj.get('is_shadow', False) and 
+                obj.get('piece_id') is not None and 
+                obj.get('piece_id') != piece_id):
+                # Round positions to ensure integer comparison
+                pos = tuple(round(p) for p in obj['pos'])
+                occupied_positions.add(pos)
+        
+        # Check if any test position collides
+        for test_pos in test_positions:
+            rounded_pos = tuple(round(p) for p in test_pos)
+            if rounded_pos in occupied_positions:
+                return True  # Collision detected
+        
+        return False  # No collision
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
