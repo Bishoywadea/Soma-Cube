@@ -68,6 +68,7 @@ class GLView(Gtk.GLArea):
         
         # Objects in the scene
         self.objects = []
+        self.object_rotations = {}
         self.selected_object = None
         
         # Set up events
@@ -94,6 +95,8 @@ class GLView(Gtk.GLArea):
 
         self.selected_piece = None
         self.drag_offset = None
+
+        self.grid_step = 0.6
 
     def on_realize(self, area):
         self.make_current()
@@ -226,12 +229,67 @@ class GLView(Gtk.GLArea):
         glBindVertexArray(0)
         self.grid_vertices = len(vertices) // 3
     
+    def is_valid_position(self, piece_type, position, rotation):
+        """Check if position is valid (similar to first implementation)"""
+        new_positions = self.get_piece_positions(piece_type, position, rotation)
+        
+        # Check collision with occupied spaces
+        for obj in self.objects:
+            if not obj.get('is_shadow', False) and 'piece_id' in obj:
+                obj_pos = tuple(round(p) for p in obj['pos'])
+                if obj_pos in new_positions:
+                    return False
+        
+        return True
+    
+    def is_valid_movement(self, piece_id, new_positions):
+        """Check if piece movement is valid"""
+        # Check each new position
+        for new_pos in new_positions:
+            # Check collision with other pieces
+            for obj in self.objects:
+                if (not obj.get('is_shadow', False) and 
+                    obj.get('piece_id') != piece_id and 
+                    'piece_id' in obj):
+                    if np.allclose(new_pos, obj['pos'], atol=0.1):
+                        return False
+            
+            # Optional: Check bounds (keep pieces within reasonable area)
+            if abs(new_pos[0]) > 10 or abs(new_pos[1]) > 10 or abs(new_pos[2]) > 10:
+                return False
+                
+        return True
+
+    def is_valid_rotation(self, piece_id, new_positions):
+        """Check if piece rotation is valid"""
+        return self.is_valid_movement(piece_id, new_positions)
+
+    def get_piece_positions(self, piece_type, position, rotation):
+        """Get all cube positions for a piece type at given position/rotation"""
+        # This would need to be adapted from the Pygame version
+        # For now, using the current piece positions
+        piece_id = None
+        for obj in self.objects:
+            if obj.get('piece_type') == piece_type:
+                piece_id = obj.get('piece_id')
+                break
+        
+        if piece_id is None:
+            return set()
+        
+        positions = set()
+        for obj in self.objects:
+            if obj.get('piece_id') == piece_id:
+                positions.add(tuple(round(p) for p in obj['pos']))
+        
+        return positions
+
     def create_scene_objects(self):
         """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
-        cube_size = 0.6
+        cube_size = 1.0
         grid_size = 3
-        grid_spacing = cube_size
+        grid_spacing = 1.0
         shadow_color = [0.05, 0.05, 0.05, 0.7]
         base_y = 1.2
 
@@ -240,12 +298,12 @@ class GLView(Gtk.GLArea):
                 for y in range(grid_size):
                     self.objects.append({
                         'pos': [
-                            (x - 1) * grid_spacing, 
-                            base_y + (y - 1) * grid_spacing,
-                            (z - 1) * grid_spacing
+                            x - 1,  # Results in -1, 0, 1
+                            base_y + y - 1,
+                            z - 1
                         ],
                         'color': shadow_color,
-                        'scale': [cube_size * 0.98] * 3, 
+                        'scale': [cube_size * 0.98] * 3,
                         'is_shadow': True
                     })
 
@@ -400,14 +458,35 @@ class GLView(Gtk.GLArea):
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
         model = self.translate(model, position[0], position[1], position[2])
+
+        # Apply rotation if exists
+        obj = None
+        for o in self.objects:
+            if np.allclose(o['pos'], position) and not o.get('is_shadow', False):
+                obj = o
+                break
+        
+        if obj and 'piece_id' in obj:
+            piece_key = f"piece_{obj['piece_id']}"
+            if piece_key in self.object_rotations:
+                rot = self.object_rotations[piece_key]
+                model = self.rotate_x(model, rot['x'])
+                model = self.rotate_y(model, rot['y'])
+                model = self.rotate_z(model, rot['z'])
+
         model = self.scale_matrix(model, scale[0], scale[1], scale[2])
         
         # Set uniforms
         model_loc = glGetUniformLocation(self.shader, "model")
         glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
         
-        color_loc = glGetUniformLocation(self.shader, "objectColor")
-        glUniform3f(color_loc, color[0], color[1], color[2])
+        # Highlight selected object
+        if self.selected_object and np.allclose(self.selected_object['pos'], position, atol=0.01):
+            glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 
+                        min(color[0] * 1.5, 1.0), min(color[1] * 1.5, 1.0), min(color[2] * 1.5, 1.0))
+        else:
+            color_loc = glGetUniformLocation(self.shader, "objectColor")
+            glUniform3f(color_loc, color[0], color[1], color[2])
         
         use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
         glUniform1f(use_vertex_color_loc, 0.0)
@@ -419,13 +498,20 @@ class GLView(Gtk.GLArea):
         
         # Draw wireframe outline
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-        glUniform3f(color_loc, 0.0, 0.0, 0.0)
+        glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 0.0, 0.0, 0.0)
         glLineWidth(1.5)
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glLineWidth(1.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         
         glBindVertexArray(0)
+
+    def snap_piece_to_grid(self, piece_id):
+        """Snap all cubes of a piece to grid after rotation"""
+        piece_cubes = [o for o in self.objects if o.get('piece_id') == piece_id]
+        
+        for cube in piece_cubes:
+            cube['pos'] = self.snap_to_grid_position(cube['pos'])
     
     def create_view_matrix(self):
         """Create view matrix with camera rotations"""
@@ -496,19 +582,33 @@ class GLView(Gtk.GLArea):
         ], dtype=np.float32)
         return np.dot(rot, m)
     
+    def rotate_z(self, m, angle):
+        """Rotate around Z axis"""
+        c = math.cos(math.radians(angle))
+        s = math.sin(math.radians(angle))
+        rot = np.array([
+            [c, -s, 0, 0],
+            [s, c, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
+        return np.dot(rot, m)
+        
     def on_mouse_press(self, widget, event):
         if event.button == 1:
-            self.last_mouse_pos = (event.x, event.y)
             self.grab_focus()
             
             # Get clicked object
             clicked_obj = self.get_object_at_position(event.x, event.y)
-            if clicked_obj and 'piece_id' in clicked_obj:
-                self.selected_piece = clicked_obj['piece_id']
-                self.drag_offset = None 
+            if clicked_obj and not clicked_obj.get('is_shadow', False):
+                self.selected_object = clicked_obj
+                print(f"Selected object at position: {clicked_obj['pos']}")
             else:
-                self.selected_piece = None
+                self.selected_object = None
+                self.last_mouse_pos = (event.x, event.y)
+                print("No object selected")
                 
+            self.queue_render()
             return True
     
     def on_mouse_release(self, widget, event):
@@ -517,6 +617,12 @@ class GLView(Gtk.GLArea):
                 # Snap to grid
                 self.snap_to_grid(self.selected_piece)
                 
+                piece_positions = []
+                for obj in self.objects:
+                    if obj.get('piece_id') == self.selected_piece:
+                        piece_positions.append(obj['pos'])
+                
+
                 # Check if placement is valid
                 if self.is_valid_placement(self.selected_piece) and not self.check_collision(self.selected_piece):
                     # Valid placement - maybe add a sound effect or visual feedback
@@ -585,6 +691,46 @@ class GLView(Gtk.GLArea):
         return True
     
     def on_key_press(self, widget, event):
+        # Handle object movement if an object is selected
+        if self.selected_object:
+            moved = False
+            
+            # Discrete movement with UIOJKL
+            if event.keyval == Gdk.KEY_u or event.keyval == Gdk.KEY_U:  # Up
+                self.move_object_discrete(self.selected_object, [0, 1, 0])
+                moved = True
+            elif event.keyval == Gdk.KEY_o or event.keyval == Gdk.KEY_O:  # Down
+                self.move_object_discrete(self.selected_object, [0, -1, 0])
+                moved = True
+            elif event.keyval == Gdk.KEY_j or event.keyval == Gdk.KEY_J:  # Left
+                self.move_object_discrete(self.selected_object, [-1, 0, 0])
+                moved = True
+            elif event.keyval == Gdk.KEY_l or event.keyval == Gdk.KEY_L:  # Right
+                self.move_object_discrete(self.selected_object, [1, 0, 0])
+                moved = True
+            elif event.keyval == Gdk.KEY_i or event.keyval == Gdk.KEY_I:  # Forward
+                self.move_object_discrete(self.selected_object, [0, 0, -1])
+                moved = True
+            elif event.keyval == Gdk.KEY_k or event.keyval == Gdk.KEY_K:  # Backward
+                self.move_object_discrete(self.selected_object, [0, 0, 1])
+                moved = True
+            
+            # Rotation with number keys
+            elif event.keyval == Gdk.KEY_1:
+                self.rotate_object(self.selected_object, 'x')  # No angle parameter, defaults to 90
+                moved = True
+            elif event.keyval == Gdk.KEY_2:
+                self.rotate_object(self.selected_object, 'y')
+                moved = True
+            elif event.keyval == Gdk.KEY_3:
+                self.rotate_object(self.selected_object, 'z')
+                moved = True
+            
+            if moved:
+                self.queue_render()
+                return True
+        
+        # Original camera movement code
         self.keys_pressed.add(event.keyval)
         
         if self.render_timer is None:
@@ -906,6 +1052,116 @@ class GLView(Gtk.GLArea):
                 return False
         
         return True
+    
+    def move_object_discrete(self, obj, direction):
+        """Move object in discrete steps"""
+        if obj and not obj.get('is_shadow', False):
+            grid_step = 1.0
+            
+            if 'piece_id' in obj:
+                piece_id = obj['piece_id']
+                
+                # Test the new position first
+                test_positions = []
+                for cube in self.objects:
+                    if cube.get('piece_id') == piece_id:
+                        new_pos = [
+                            cube['pos'][0] + direction[0] * grid_step,
+                            cube['pos'][1] + direction[1] * grid_step,
+                            cube['pos'][2] + direction[2] * grid_step
+                        ]
+                        test_positions.append(new_pos)
+                
+                # Check if any new position would cause collision
+                if self.is_valid_movement(piece_id, test_positions):
+                    # Apply the movement
+                    for cube in self.objects:
+                        if cube.get('piece_id') == piece_id:
+                            cube['pos'][0] += direction[0] * grid_step
+                            cube['pos'][1] += direction[1] * grid_step
+                            cube['pos'][2] += direction[2] * grid_step
+
+    def rotate_object(self, obj, axis, angle=90):  # Default to 90 degrees
+        """Rotate entire piece around its center in 90-degree increments"""
+        if obj and not obj.get('is_shadow', False):
+            if 'piece_id' in obj:
+                piece_id = obj['piece_id']
+                
+                # Get all cubes of this piece
+                piece_cubes = [o for o in self.objects if o.get('piece_id') == piece_id]
+                
+                # Calculate piece center (rounded to grid)
+                positions = [np.array(cube['pos']) for cube in piece_cubes]
+                center = np.mean(positions, axis=0)
+                center = np.round(center)
+                
+                # Test the rotation first
+                test_positions = []
+                for cube in piece_cubes:
+                    relative_pos = np.array(cube['pos']) - center
+                    
+                    if axis == 'x':
+                        rotated = self.rotate_vector_x(relative_pos, 90)
+                    elif axis == 'y':
+                        rotated = self.rotate_vector_y(relative_pos, 90)
+                    elif axis == 'z':
+                        rotated = self.rotate_vector_z(relative_pos, 90)
+                    
+                    new_pos = rotated + center
+                    test_positions.append([round(p) for p in new_pos.tolist()])
+                
+                # Check if rotation is valid
+                if self.is_valid_rotation(piece_id, test_positions):
+                    # Apply the rotation
+                    for i, cube in enumerate(piece_cubes):
+                        cube['pos'] = test_positions[i]
+                    
+                    # Update visual rotation
+                    piece_key = f"piece_{piece_id}"
+                    if piece_key not in self.object_rotations:
+                        self.object_rotations[piece_key] = {'x': 0, 'y': 0, 'z': 0}
+                    self.object_rotations[piece_key][axis] = (self.object_rotations[piece_key][axis] + 90) % 360
+
+    def rotate_vector_x(self, vec, angle):
+        """Rotate a 3D vector around X axis"""
+        rad = math.radians(angle)
+        c = math.cos(rad)
+        s = math.sin(rad)
+        return np.array([
+            vec[0],
+            vec[1] * c - vec[2] * s,
+            vec[1] * s + vec[2] * c
+        ])
+
+    def rotate_vector_y(self, vec, angle):
+        """Rotate a 3D vector around Y axis"""
+        rad = math.radians(angle)
+        c = math.cos(rad)
+        s = math.sin(rad)
+        return np.array([
+            vec[0] * c + vec[2] * s,
+            vec[1],
+            -vec[0] * s + vec[2] * c
+        ])
+
+    def rotate_vector_z(self, vec, angle):
+        """Rotate a 3D vector around Z axis"""
+        rad = math.radians(angle)
+        c = math.cos(rad)
+        s = math.sin(rad)
+        return np.array([
+            vec[0] * c - vec[1] * s,
+            vec[0] * s + vec[1] * c,
+            vec[2]
+        ])
+
+    def snap_to_grid_position(self, position):
+        """Snap a position to the nearest grid point"""
+        return [
+            round(position[0] / self.grid_step) * self.grid_step,
+            round(position[1] / self.grid_step) * self.grid_step,
+            round(position[2] / self.grid_step) * self.grid_step
+        ]
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
@@ -935,7 +1191,7 @@ class CubeWindow(Gtk.Window):
         controls_label = Gtk.Label()
         controls_label.set_markup(
             "<b>Controls:</b> " +
-            "WASD: Move | Mouse: Look around | Scroll: Zoom | Space/Shift: Up/Down | R: Reset"
+            "WASD: Camera | Click: Select | UIOJKL: Move Object | 123: Rotate XYZ | R: Reset"
         )
         info_box.pack_start(controls_label, False, False, 0)
         
