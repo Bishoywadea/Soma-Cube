@@ -116,7 +116,6 @@ class GLView(Gtk.GLArea):
         # Create geometry
         self.setup_cube()
         self.setup_grid()
-        self.setup_arrow()
         self.create_scene_objects()
         GLib.idle_add(self.update_controls_hud)
         
@@ -455,9 +454,6 @@ class GLView(Gtk.GLArea):
             if not obj.get('is_shadow', False):
                 self.draw_cube(obj['pos'], obj['scale'], obj['color'])
         
-        # Draw movement arrows if an object is selected
-        self.draw_movement_arrows()
-
         glUseProgram(0)
         return True
     
@@ -1175,171 +1171,6 @@ class GLView(Gtk.GLArea):
         
         return False  # No collision
     
-    def setup_arrow(self):
-        """Create arrow geometry for movement indicators"""
-        vertices = []
-        colors = []
-        
-        # Arrow shaft (a thin box)
-        shaft_length = 0.8
-        shaft_width = 0.1
-        
-        # Shaft vertices (along Z axis, pointing forward)
-        shaft_verts = [
-            # Back face
-            [-shaft_width/2, -shaft_width/2, 0],
-            [shaft_width/2, -shaft_width/2, 0],
-            [shaft_width/2, shaft_width/2, 0],
-            [-shaft_width/2, shaft_width/2, 0],
-            # Front face
-            [-shaft_width/2, -shaft_width/2, shaft_length],
-            [shaft_width/2, -shaft_width/2, shaft_length],
-            [shaft_width/2, shaft_width/2, shaft_length],
-            [-shaft_width/2, shaft_width/2, shaft_length],
-        ]
-        
-        # Arrow head (a pyramid)
-        head_size = 0.2
-        head_length = 0.3
-        head_verts = [
-            # Base of pyramid (at end of shaft)
-            [-head_size, -head_size, shaft_length],
-            [head_size, -head_size, shaft_length],
-            [head_size, head_size, shaft_length],
-            [-head_size, head_size, shaft_length],
-            # Tip of arrow
-            [0, 0, shaft_length + head_length],
-        ]
-        
-        # Combine vertices
-        all_verts = shaft_verts + head_verts
-        
-        # Create indices for shaft
-        indices = []
-        # Shaft faces
-        faces = [
-            [0, 1, 2, 3],  # Back
-            [4, 7, 6, 5],  # Front
-            [0, 4, 5, 1],  # Bottom
-            [2, 6, 7, 3],  # Top
-            [0, 3, 7, 4],  # Left
-            [1, 5, 6, 2],  # Right
-        ]
-        
-        for face in faces:
-            vertices.extend([all_verts[i] for i in face])
-            colors.extend([[0.9, 0.9, 0.9]] * 4)  # White/gray color
-            base = len(indices)
-            indices.extend([base, base+1, base+2, base, base+2, base+3])
-        
-        # Head faces (pyramid)
-        head_base = 8  # Start of head vertices
-        pyramid_faces = [
-            [head_base, head_base+1, head_base+4],  # Front triangle
-            [head_base+1, head_base+2, head_base+4],  # Right triangle
-            [head_base+2, head_base+3, head_base+4],  # Back triangle
-            [head_base+3, head_base, head_base+4],  # Left triangle
-        ]
-        
-        for face in pyramid_faces:
-            vertices.extend([all_verts[i] for i in face])
-            colors.extend([[0.9, 0.9, 0.9]] * 3)
-            base = len(indices)
-            indices.extend([base, base+1, base+2])
-        
-        # Flatten arrays
-        vertices = np.array([v for quad in vertices for v in quad], dtype=np.float32)
-        colors = np.array([c for quad in colors for c in quad], dtype=np.float32)
-        indices = np.array(indices, dtype=np.uint32)
-        
-        # Create VAO for arrow
-        self.arrow_vao = glGenVertexArrays(1)
-        glBindVertexArray(self.arrow_vao)
-        
-        # Create buffers
-        vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW)
-        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
-        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
-        
-        ebo = glGenBuffers(1)
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
-        
-        # Set attributes
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
-        glEnableVertexAttribArray(1)
-        
-        glBindVertexArray(0)
-        self.arrow_indices = len(indices)
-
-    def draw_movement_arrows(self):
-        """Draw directional arrows around selected object"""
-        if not self.selected_object or self.selected_object.get('is_shadow', False):
-            return
-        
-        # Get center of selected piece
-        if 'piece_id' in self.selected_object:
-            piece_id = self.selected_object['piece_id']
-            piece_cubes = [o for o in self.objects if o.get('piece_id') == piece_id]
-            
-            # Calculate piece center
-            positions = [np.array(cube['pos']) for cube in piece_cubes]
-            center = np.mean(positions, axis=0)
-        else:
-            center = np.array(self.selected_object['pos'])
-        
-        # Distance from center to place arrows
-        arrow_distance = 2.5
-        
-        # Define arrow directions and rotations
-        arrows = [
-            # Direction, rotation axis, rotation angle, color (RGB)
-            {'offset': [arrow_distance, 0, 0], 'rot_axis': 'y', 'rot_angle': 90, 'color': [1, 0.2, 0.2]},   # Right (red)
-            {'offset': [-arrow_distance, 0, 0], 'rot_axis': 'y', 'rot_angle': -90, 'color': [1, 0.2, 0.2]},  # Left (red)
-            {'offset': [0, arrow_distance, 0], 'rot_axis': 'x', 'rot_angle': -90, 'color': [0.2, 1, 0.2]},   # Up (green)
-            {'offset': [0, -arrow_distance, 0], 'rot_axis': 'x', 'rot_angle': 90, 'color': [0.2, 1, 0.2]},   # Down (green)
-            {'offset': [0, 0, arrow_distance], 'rot_axis': 'y', 'rot_angle': 180, 'color': [0.2, 0.2, 1]},   # Back (blue)
-            {'offset': [0, 0, -arrow_distance], 'rot_axis': 'y', 'rot_angle': 0, 'color': [0.2, 0.2, 1]},    # Forward (blue)
-        ]
-        
-        for arrow in arrows:
-            # Calculate arrow position
-            arrow_pos = center + np.array(arrow['offset'])
-            
-            # Create model matrix for arrow
-            model = np.eye(4, dtype=np.float32)
-            model = self.translate(model, arrow_pos[0], arrow_pos[1], arrow_pos[2])
-            
-            # Apply rotation to point in correct direction
-            if arrow['rot_axis'] == 'x':
-                model = self.rotate_x(model, arrow['rot_angle'])
-            elif arrow['rot_axis'] == 'y':
-                model = self.rotate_y(model, arrow['rot_angle'])
-            elif arrow['rot_axis'] == 'z':
-                model = self.rotate_z(model, arrow['rot_angle'])
-            
-            # Scale arrow
-            model = self.scale_matrix(model, 1.0, 1.0, 1.0)
-            
-            # Set uniforms
-            model_loc = glGetUniformLocation(self.shader, "model")
-            glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
-            
-            color_loc = glGetUniformLocation(self.shader, "objectColor")
-            glUniform3f(color_loc, arrow['color'][0], arrow['color'][1], arrow['color'][2])
-            
-            use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
-            glUniform1f(use_vertex_color_loc, 0.0)
-            
-            # Draw arrow
-            glBindVertexArray(self.arrow_vao)
-            glDrawElements(GL_TRIANGLES, self.arrow_indices, GL_UNSIGNED_INT, None)
-            glBindVertexArray(0)
-
     def update_controls_hud(self):
         if not hasattr(self, 'hud_labels'):
             return
