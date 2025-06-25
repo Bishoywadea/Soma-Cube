@@ -926,6 +926,9 @@ class GLView(Gtk.GLArea):
             if dist < min_dist:
                 min_dist = dist
                 closest_obj = obj
+        
+        if min_dist > 1.2:
+            return None
 
         return closest_obj
 
