@@ -1,5 +1,6 @@
 import gi
-gi.require_version('Gtk', '3.0')
+
+gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
@@ -45,6 +46,7 @@ void main() {
 }
 """
 
+
 class GLView(Gtk.GLArea):
     def __init__(self):
         super().__init__()
@@ -52,42 +54,44 @@ class GLView(Gtk.GLArea):
         self.set_has_depth_buffer(True)
         self.connect("realize", self.on_realize)
         self.connect("render", self.on_render)
-        
+
         # Camera control
         self.camera_rotation = [0.0, 0.0]
         self.zoom = 10.0
-        self.camera_position = [0.0, 1.7, 0.0] 
-        
+        self.camera_position = [0.0, 1.7, 0.0]
+
         # Mouse control
         self.last_mouse_pos = None
         self.dragging_object = False
-        
+
         # Movement
         self.keys_pressed = set()
         self.movement_speed = 0.2
         self.render_timer = None
-        
+
         # Objects in the scene
         self.objects = []
         self.selected_object = None
-        
+
         # Set up events
-        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
-                       Gdk.EventMask.BUTTON_RELEASE_MASK |
-                       Gdk.EventMask.POINTER_MOTION_MASK |
-                       Gdk.EventMask.SCROLL_MASK |
-                       Gdk.EventMask.KEY_PRESS_MASK |
-                       Gdk.EventMask.KEY_RELEASE_MASK)
-        
+        self.add_events(
+            Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.BUTTON_RELEASE_MASK
+            | Gdk.EventMask.POINTER_MOTION_MASK
+            | Gdk.EventMask.SCROLL_MASK
+            | Gdk.EventMask.KEY_PRESS_MASK
+            | Gdk.EventMask.KEY_RELEASE_MASK
+        )
+
         self.connect("button-press-event", self.on_mouse_press)
         self.connect("button-release-event", self.on_mouse_release)
         self.connect("motion-notify-event", self.on_mouse_motion)
         self.connect("scroll-event", self.on_scroll)
         self.connect("key-press-event", self.on_key_press)
         self.connect("key-release-event", self.on_key_release)
-        
+
         self.set_can_focus(True)
-        
+
         # OpenGL objects
         self.cube_vao = None
         self.grid_vao = None
@@ -100,107 +104,141 @@ class GLView(Gtk.GLArea):
 
     def on_realize(self, area):
         self.make_current()
-        
+
         # Initialize OpenGL
         glClearColor(0.15, 0.15, 0.15, 1.0)  # Dark background
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_LINE_SMOOTH)
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
-        
+
         # Create shader
         self.shader = compileProgram(
             compileShader(vertex_shader, GL_VERTEX_SHADER),
-            compileShader(fragment_shader, GL_FRAGMENT_SHADER)
+            compileShader(fragment_shader, GL_FRAGMENT_SHADER),
         )
-        
+
         # Create geometry
         self.setup_cube()
         self.setup_grid()
         self.create_scene_objects()
         GLib.idle_add(self.update_controls_hud)
-        
+
     def setup_cube(self):
         """Create a unit cube mesh"""
         vertices = []
         colors = []
-        
+
         # Define cube faces with colors
         faces = [
             # Front (z=0.5) - slightly different shades for each face
-            ([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]),
+            ([-0.5, -0.5, 0.5],
+             [0.5, -0.5, 0.5],
+             [0.5, 0.5, 0.5],
+             [-0.5, 0.5, 0.5]),
             # Back (z=-0.5)
-            ([0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]),
+            (
+                [0.5, -0.5, -0.5],
+                [-0.5, -0.5, -0.5],
+                [-0.5, 0.5, -0.5],
+                [0.5, 0.5, -0.5],
+            ),
             # Top (y=0.5)
-            ([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]),
+            ([-0.5, 0.5, 0.5],
+             [0.5, 0.5, 0.5],
+             [0.5, 0.5, -0.5],
+             [-0.5, 0.5, -0.5]),
             # Bottom (y=-0.5)
-            ([-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5]),
+            (
+                [-0.5, -0.5, -0.5],
+                [0.5, -0.5, -0.5],
+                [0.5, -0.5, 0.5],
+                [-0.5, -0.5, 0.5],
+            ),
             # Right (x=0.5)
-            ([0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]),
+            ([0.5, -0.5, 0.5],
+             [0.5, -0.5, -0.5],
+             [0.5, 0.5, -0.5],
+             [0.5, 0.5, 0.5]),
             # Left (x=-0.5)
-            ([-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5])
+            (
+                [-0.5, -0.5, -0.5],
+                [-0.5, -0.5, 0.5],
+                [-0.5, 0.5, 0.5],
+                [-0.5, 0.5, -0.5],
+            ),
         ]
-        
+
         indices = []
         vertex_count = 0
-        
+
         for face in faces:
             for vertex in face:
                 vertices.extend(vertex)
                 colors.extend([0.8, 0.8, 0.8])  # Default gray color
-            
+
             # Two triangles per face
             base = vertex_count
-            indices.extend([base, base+1, base+2, base, base+2, base+3])
+            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
             vertex_count += 4
-        
+
         vertices = np.array(vertices, dtype=np.float32)
         colors = np.array(colors, dtype=np.float32)
         indices = np.array(indices, dtype=np.uint32)
-        
+
         # Create VAO
         self.cube_vao = glGenVertexArrays(1)
         glBindVertexArray(self.cube_vao)
-        
+
         # Vertex buffer
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW)
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes + colors.nbytes,
+            None,
+            GL_STATIC_DRAW
+        )
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
-        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
-        
+        glBufferSubData(GL_ARRAY_BUFFER,
+                        vertices.nbytes,
+                        colors.nbytes,
+                        colors)
+
         # Index buffer
         ebo = glGenBuffers(1)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
-        
+
         # Attributes
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
+        glVertexAttribPointer(
+            1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes)
+        )
         glEnableVertexAttribArray(1)
-        
+
         glBindVertexArray(0)
         self.cube_indices = len(indices)
-    
+
     def setup_grid(self):
         """Create a grid floor"""
         vertices = []
         colors = []
-        
+
         grid_size = 20
         grid_step = 1.0
         y_level = -0.5  # Floor level
-        
+
         # Grid lines
         for i in range(-grid_size, grid_size + 1):
             # Lines parallel to X axis
             vertices.extend([i * grid_step, y_level, -grid_size * grid_step])
             vertices.extend([i * grid_step, y_level, grid_size * grid_step])
-            
+
             # Lines parallel to Z axis
             vertices.extend([-grid_size * grid_step, y_level, i * grid_step])
             vertices.extend([grid_size * grid_step, y_level, i * grid_step])
-            
+
             # Color for grid lines
             if i == 0:
                 # Axis lines are brighter
@@ -208,57 +246,63 @@ class GLView(Gtk.GLArea):
             else:
                 # Regular grid lines
                 colors.extend([0.3, 0.3, 0.3] * 4)
-        
+
         vertices = np.array(vertices, dtype=np.float32)
         colors = np.array(colors, dtype=np.float32)
-        
+
         # Create VAO for grid
         self.grid_vao = glGenVertexArrays(1)
         glBindVertexArray(self.grid_vao)
-        
+
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW)
+        glBufferData(
+            GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW
+        )
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
         glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
-        
+
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
+        glVertexAttribPointer(
+            1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes)
+        )
         glEnableVertexAttribArray(1)
-        
+
         glBindVertexArray(0)
         self.grid_vertices = len(vertices) // 3
-    
+
     def is_valid_position(self, piece_type, position, rotation):
         """Check if position is valid (similar to first implementation)"""
         new_positions = self.get_piece_positions(piece_type, position, rotation)
-        
+
         # Check collision with occupied spaces
         for obj in self.objects:
-            if not obj.get('is_shadow', False) and 'piece_id' in obj:
-                obj_pos = tuple(round(p) for p in obj['pos'])
+            if not obj.get("is_shadow", False) and "piece_id" in obj:
+                obj_pos = tuple(round(p) for p in obj["pos"])
                 if obj_pos in new_positions:
                     return False
-        
+
         return True
-    
+
     def is_valid_movement(self, piece_id, new_positions):
         """Check if piece movement is valid"""
         # Check each new position
         for new_pos in new_positions:
             # Check collision with other pieces
             for obj in self.objects:
-                if (not obj.get('is_shadow', False) and 
-                    obj.get('piece_id') != piece_id and 
-                    'piece_id' in obj):
-                    if np.allclose(new_pos, obj['pos'], atol=0.1):
+                if (
+                    not obj.get("is_shadow", False)
+                    and obj.get("piece_id") != piece_id
+                    and "piece_id" in obj
+                ):
+                    if np.allclose(new_pos, obj["pos"], atol=0.1):
                         return False
-            
+
             # Optional: Check bounds (keep pieces within reasonable area)
             if abs(new_pos[0]) > 10 or abs(new_pos[1]) > 10 or abs(new_pos[2]) > 10:
                 return False
-                
+
         return True
 
     def is_valid_rotation(self, piece_id, new_positions):
@@ -271,18 +315,18 @@ class GLView(Gtk.GLArea):
         # For now, using the current piece positions
         piece_id = None
         for obj in self.objects:
-            if obj.get('piece_type') == piece_type:
-                piece_id = obj.get('piece_id')
+            if obj.get("piece_type") == piece_type:
+                piece_id = obj.get("piece_id")
                 break
-        
+
         if piece_id is None:
             return set()
-        
+
         positions = set()
         for obj in self.objects:
-            if obj.get('piece_id') == piece_id:
-                positions.add(tuple(round(p) for p in obj['pos']))
-        
+            if obj.get("piece_id") == piece_id:
+                positions.add(tuple(round(p) for p in obj["pos"]))
+
         return positions
 
     def create_scene_objects(self):
@@ -293,46 +337,42 @@ class GLView(Gtk.GLArea):
         grid_spacing = 1.0
         shadow_color = [0.05, 0.05, 0.05, 0.7]
         base_y = 1  # Base height for the 3x3x3 grid
-        
+
         # Create shadow cubes (the target 3x3x3 grid)
         for x in range(grid_size):
             for z in range(grid_size):
                 for y in range(grid_size):
-                    self.objects.append({
-                        'pos': [
-                            (x - 1) * grid_spacing,  # -1, 0, 1
-                            base_y + (y - 1) * grid_spacing,  # 0, 1, 2
-                            (z - 1) * grid_spacing   # -1, 0, 1
-                        ],
-                        'color': shadow_color,
-                        'scale': [cube_size * 0.98] * 3,
-                        'is_shadow': True
-                    })
-        
+                    self.objects.append(
+                        {
+                            "pos": [
+                                (x - 1) * grid_spacing,  # -1, 0, 1
+                                base_y + (y - 1) * grid_spacing,  # 0, 1, 2
+                                (z - 1) * grid_spacing,  # -1, 0, 1
+                            ],
+                            "color": shadow_color,
+                            "scale": [cube_size * 0.98] * 3,
+                            "is_shadow": True,
+                        }
+                    )
+
         # Define the 7 Soma pieces
         pieces = [
             # Piece 1: V (3 cubes, bent)
             [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
-            
             # Piece 2: L (4 cubes, 3 in a line + 1 bend)
             [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0]],
-            
             # Piece 3: T (4 cubes, T shape)
             [[0, 0, 0], [1, 0, 0], [2, 0, 0], [1, 1, 0]],
-            
             # Piece 4: Z (4 cubes, zig-zag)
             [[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 0]],
-            
             # Piece 5: A (3D stair)
             [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 1, 1]],
-            
             # Piece 6: B (corner: L in 3D)
             [[0, 0, 0], [0, 1, 0], [1, 1, 0], [0, 1, 1]],
-            
             # Piece 7: P (chair shape)
-            [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]]
+            [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]],
         ]
-        
+
         # Colors for pieces (bright, distinct colors)
         piece_colors = [
             [0.9, 0.2, 0.2],  # Red
@@ -343,134 +383,140 @@ class GLView(Gtk.GLArea):
             [0.2, 0.9, 0.9],  # Cyan
             [0.9, 0.5, 0.2],  # Orange
         ]
-        
+
         # Place pieces around the 3x3x3 grid (not overlapping)
         start_x = -8  # Start position for piece queue
         piece_spacing = 4  # Space between pieces
-        
+
         for i, piece in enumerate(pieces):
             piece_color = piece_colors[i]
-            
+
             # Calculate base position for this piece
             base_x = start_x + (i * piece_spacing)
             base_y = 0  # Place pieces on the ground
             base_z = -5  # In front of the grid
-            
+
             # Create cubes for this piece
             for cube_offset in piece:
-                self.objects.append({
-                    'pos': [
-                        base_x + cube_offset[0] * cube_size,
-                        base_y + cube_offset[1] * cube_size,
-                        base_z + cube_offset[2] * cube_size
-                    ],
-                    'color': piece_color,
-                    'scale': [cube_size] * 3,
-                    'piece_id': i,  # Identify which piece this cube belongs to
-                    'piece_type': f'piece_{i}'  # Add piece type for reference
-                })
+                self.objects.append(
+                    {
+                        "pos": [
+                            base_x + cube_offset[0] * cube_size,
+                            base_y + cube_offset[1] * cube_size,
+                            base_z + cube_offset[2] * cube_size,
+                        ],
+                        "color": piece_color,
+                        "scale": [cube_size] * 3,
+                        "piece_id": i,  # Identify which piece this cube belongs to
+                        "piece_type": f"piece_{i}",  # Add piece type for reference
+                    }
+                )
 
     def get_random_color(self):
         """Generate a random RGB color with good visibility"""
         return [
             random.uniform(0.3, 0.9),  # Red
             random.uniform(0.3, 0.9),  # Green
-            random.uniform(0.3, 0.9)   # Blue
+            random.uniform(0.3, 0.9),  # Blue
         ]
 
     def get_camera_vectors(self):
         """Calculate forward, right, and up vectors based on camera rotation"""
         pitch = math.radians(self.camera_rotation[0])
         yaw = math.radians(self.camera_rotation[1])
-        
-        forward = np.array([
-            math.cos(pitch) * math.sin(yaw),
-            -math.sin(pitch),
-            -math.cos(pitch) * math.cos(yaw)
-        ])
-        
+
+        forward = np.array(
+            [
+                math.cos(pitch) * math.sin(yaw),
+                -math.sin(pitch),
+                -math.cos(pitch) * math.cos(yaw),
+            ]
+        )
+
         world_up = np.array([0, 1, 0])
         right = np.cross(forward, world_up)
         right = right / np.linalg.norm(right)
-        
+
         up = np.cross(right, forward)
         up = up / np.linalg.norm(up)
-        
+
         return forward, right, up
-    
+
     def check_object_hit(self, x, y):
         """Check if mouse click hits an object"""
         self.make_current()
-        
+
         viewport_height = self.get_allocated_height()
         gl_y = viewport_height - y
-        
-        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
-        
+
+        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][
+            0
+        ]
+
         return depth < 1.0
-    
+
     def on_render(self, area, context):
         if not self.shader:
             return False
-            
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        
+
         width = self.get_allocated_width()
         height = self.get_allocated_height()
         if width == 0 or height == 0:
             return False
-            
+
         glViewport(0, 0, width, height)
         glUseProgram(self.shader)
-        
+
         # Create matrices
         aspect = width / height
         projection = self.perspective(45.0, aspect, 0.1, 100.0)
         view = self.create_view_matrix()
-        
+
         # Set uniforms that don't change per object
         view_loc = glGetUniformLocation(self.shader, "view")
         proj_loc = glGetUniformLocation(self.shader, "projection")
         glUniformMatrix4fv(view_loc, 1, GL_FALSE, view.T.flatten())
         glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection.T.flatten())
-        
+
         # Draw grid floor
         self.draw_grid()
-        
+
         # Enable blending for shadows (should be done here, before drawing shadows)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        
+
         # First draw all shadow cubes
         for obj in self.objects:
-            if obj.get('is_shadow', False):
-                self.draw_shadow_cube(obj['pos'], obj['scale'], obj['color'])
-        
+            if obj.get("is_shadow", False):
+                self.draw_shadow_cube(obj["pos"], obj["scale"], obj["color"])
+
         # Disable blending for regular objects
         glDisable(GL_BLEND)
-        
+
         # Then draw all regular cubes
         for obj in self.objects:
-            if not obj.get('is_shadow', False):
-                self.draw_cube(obj['pos'], obj['scale'], obj['color'])
-        
+            if not obj.get("is_shadow", False):
+                self.draw_cube(obj["pos"], obj["scale"], obj["color"])
+
         glUseProgram(0)
         return True
-    
+
     def draw_grid(self):
         """Draw the grid floor"""
         model = np.eye(4, dtype=np.float32)
         model_loc = glGetUniformLocation(self.shader, "model")
         glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
-        
+
         # Use vertex colors for grid
         use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
         glUniform1f(use_vertex_color_loc, 1.0)
-        
+
         glBindVertexArray(self.grid_vao)
         glDrawArrays(GL_LINES, 0, self.grid_vertices)
         glBindVertexArray(0)
-    
+
     def draw_cube(self, position, scale, color):
         """Draw a cube at the specified position with given scale and color"""
         # Create model matrix
@@ -478,27 +524,33 @@ class GLView(Gtk.GLArea):
         model = self.translate(model, position[0], position[1], position[2])
 
         model = self.scale_matrix(model, scale[0], scale[1], scale[2])
-        
+
         # Set uniforms
         model_loc = glGetUniformLocation(self.shader, "model")
         glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
-        
+
         # Highlight selected object
-        if self.selected_object and np.allclose(self.selected_object['pos'], position, atol=0.01):
-            glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 
-                        min(color[0] * 1.5, 1.0), min(color[1] * 1.5, 1.0), min(color[2] * 1.5, 1.0))
+        if self.selected_object and np.allclose(
+            self.selected_object["pos"], position, atol=0.01
+        ):
+            glUniform3f(
+                glGetUniformLocation(self.shader, "objectColor"),
+                min(color[0] * 1.5, 1.0),
+                min(color[1] * 1.5, 1.0),
+                min(color[2] * 1.5, 1.0),
+            )
         else:
             color_loc = glGetUniformLocation(self.shader, "objectColor")
             glUniform3f(color_loc, color[0], color[1], color[2])
-        
+
         use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
         glUniform1f(use_vertex_color_loc, 0.0)
-        
+
         # Draw solid cube
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         glBindVertexArray(self.cube_vao)
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
-        
+
         # Draw wireframe outline
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 0.0, 0.0, 0.0)
@@ -506,119 +558,110 @@ class GLView(Gtk.GLArea):
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glLineWidth(1.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-        
+
         glBindVertexArray(0)
 
     def snap_piece_to_grid(self, piece_id):
         """Snap all cubes of a piece to grid after rotation"""
-        piece_cubes = [o for o in self.objects if o.get('piece_id') == piece_id]
-        
+        piece_cubes = [o for o in self.objects if o.get("piece_id") == piece_id]
+
         for cube in piece_cubes:
-            cube['pos'] = self.snap_to_grid_position(cube['pos'])
-    
+            cube["pos"] = self.snap_to_grid_position(cube["pos"])
+
     def create_view_matrix(self):
         """Create view matrix with camera rotations"""
         view = np.eye(4, dtype=np.float32)
-        
-        view = self.translate(view, -self.camera_position[0], 
-                            -self.camera_position[1], 
-                            -(self.camera_position[2] + self.zoom))
-        
+
+        view = self.translate(
+            view,
+            -self.camera_position[0],
+            -self.camera_position[1],
+            -(self.camera_position[2] + self.zoom),
+        )
+
         view = self.rotate_x(view, self.camera_rotation[0])
         view = self.rotate_y(view, self.camera_rotation[1])
-        
+
         return view
-    
+
     def perspective(self, fovy, aspect, near, far):
         """Create perspective projection matrix"""
         f = 1.0 / math.tan(math.radians(fovy) / 2.0)
         nf = 1.0 / (near - far)
-        
-        return np.array([
-            [f / aspect, 0, 0, 0],
-            [0, f, 0, 0],
-            [0, 0, (far + near) * nf, 2 * far * near * nf],
-            [0, 0, -1, 0]
-        ], dtype=np.float32)
-    
+
+        return np.array(
+            [
+                [f / aspect, 0, 0, 0],
+                [0, f, 0, 0],
+                [0, 0, (far + near) * nf, 2 * far * near * nf],
+                [0, 0, -1, 0],
+            ],
+            dtype=np.float32,
+        )
+
     def translate(self, m, x, y, z):
         """Apply translation to matrix"""
-        trans = np.array([
-            [1, 0, 0, x],
-            [0, 1, 0, y],
-            [0, 0, 1, z],
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
+        trans = np.array(
+            [[1, 0, 0, x], [0, 1, 0, y], [0, 0, 1, z], [0, 0, 0, 1]], dtype=np.float32
+        )
         return np.dot(trans, m)
-    
+
     def scale_matrix(self, m, x, y, z):
         """Apply scale to matrix"""
-        scale = np.array([
-            [x, 0, 0, 0],
-            [0, y, 0, 0],
-            [0, 0, z, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
+        scale = np.array(
+            [[x, 0, 0, 0], [0, y, 0, 0], [0, 0, z, 0], [0, 0, 0, 1]], dtype=np.float32
+        )
         return np.dot(scale, m)
-    
+
     def rotate_x(self, m, angle):
         """Rotate around X axis"""
         c = math.cos(math.radians(angle))
         s = math.sin(math.radians(angle))
-        rot = np.array([
-            [1, 0, 0, 0],
-            [0, c, -s, 0],
-            [0, s, c, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
+        rot = np.array(
+            [[1, 0, 0, 0], [0, c, -s, 0], [0, s, c, 0], [0, 0, 0, 1]], dtype=np.float32
+        )
         return np.dot(rot, m)
-    
+
     def rotate_y(self, m, angle):
         """Rotate around Y axis"""
         c = math.cos(math.radians(angle))
         s = math.sin(math.radians(angle))
-        rot = np.array([
-            [c, 0, s, 0],
-            [0, 1, 0, 0],
-            [-s, 0, c, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
+        rot = np.array(
+            [[c, 0, s, 0], [0, 1, 0, 0], [-s, 0, c, 0], [0, 0, 0, 1]], dtype=np.float32
+        )
         return np.dot(rot, m)
-    
+
     def rotate_z(self, m, angle):
         """Rotate around Z axis"""
         c = math.cos(math.radians(angle))
         s = math.sin(math.radians(angle))
-        rot = np.array([
-            [c, -s, 0, 0],
-            [s, c, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
+        rot = np.array(
+            [[c, -s, 0, 0], [s, c, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float32
+        )
         return np.dot(rot, m)
-        
+
     def on_mouse_press(self, widget, event):
         if event.button == 1:
             self.grab_focus()
-            
+
             # Get clicked object
             clicked_obj = self.get_object_at_position(event.x, event.y)
-            if clicked_obj and not clicked_obj.get('is_shadow', False):
+            if clicked_obj and not clicked_obj.get("is_shadow", False):
                 self.selected_object = clicked_obj
                 print(f"Selected object at position: {clicked_obj['pos']}")
             else:
                 self.selected_object = None
                 self.last_mouse_pos = (event.x, event.y)
                 print("No object selected")
-                
+
             self.queue_render()
             return True
-    
+
     def on_mouse_release(self, widget, event):
         if event.button == 1:
             self.last_mouse_pos = None
             return True
-    
+
     def on_mouse_motion(self, widget, event):
         if self.last_mouse_pos and self.selected_object is None:
             dx = event.x - self.last_mouse_pos[0]
@@ -627,11 +670,13 @@ class GLView(Gtk.GLArea):
             # Update camera rotation angles
             self.camera_rotation[1] += dx * 0.5
             # Clamp up/down rotation to prevent flipping
-            self.camera_rotation[0] = max(-89.0, min(89.0, self.camera_rotation[0] + dy * 0.5))
+            self.camera_rotation[0] = max(
+                -89.0, min(89.0, self.camera_rotation[0] + dy * 0.5)
+            )
 
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
-            
+
             # Update the controls HUD since camera orientation changed
             self.update_controls_hud()
             return True
@@ -642,15 +687,15 @@ class GLView(Gtk.GLArea):
             self.zoom = max(2.0, self.zoom - 0.5)
         elif event.direction == Gdk.ScrollDirection.DOWN:
             self.zoom = min(50.0, self.zoom + 0.5)
-        
+
         self.queue_render()
         return True
-    
+
     def on_key_press(self, widget, event):
         # Handle object movement if an object is selected
         if self.selected_object:
             moved = False
-            
+
             # Discrete movement with UIOJKL
             if event.keyval == Gdk.KEY_u or event.keyval == Gdk.KEY_U:  # Up
                 self.move_object_discrete(self.selected_object, [0, 1, 0])
@@ -670,51 +715,53 @@ class GLView(Gtk.GLArea):
             elif event.keyval == Gdk.KEY_k or event.keyval == Gdk.KEY_K:  # Backward
                 self.move_object_discrete(self.selected_object, [0, 0, 1])
                 moved = True
-            
+
             # Rotation with number keys
             elif event.keyval == Gdk.KEY_1:
-                self.rotate_object(self.selected_object, 'x')  # No angle parameter, defaults to 90
+                self.rotate_object(
+                    self.selected_object, "x"
+                )  # No angle parameter, defaults to 90
                 moved = True
             elif event.keyval == Gdk.KEY_2:
-                self.rotate_object(self.selected_object, 'y')
+                self.rotate_object(self.selected_object, "y")
                 moved = True
             elif event.keyval == Gdk.KEY_3:
-                self.rotate_object(self.selected_object, 'z')
+                self.rotate_object(self.selected_object, "z")
                 moved = True
-            
+
             if moved:
                 self.queue_render()
                 return True
-        
+
         # Original camera movement code
         self.keys_pressed.add(event.keyval)
-        
+
         if self.render_timer is None:
             self.render_timer = GLib.timeout_add(16, self.update_movement)
-        
+
         if event.keyval == Gdk.KEY_r or event.keyval == Gdk.KEY_R:
             self.camera_rotation = [0.0, 0.0]
-            self.camera_position = [0.0, 1.7, 0.0]  
+            self.camera_position = [0.0, 1.7, 0.0]
             self.zoom = 10.0
             self.queue_render()
-            
+
         return True
-    
+
     def on_key_release(self, widget, event):
         self.keys_pressed.discard(event.keyval)
-        
+
         if not self.keys_pressed and self.render_timer:
             GLib.source_remove(self.render_timer)
             self.render_timer = None
-            
+
         return True
-    
+
     def update_movement(self):
         """Update movement based on pressed keys - relative to camera orientation"""
         forward, right, up = self.get_camera_vectors()
-        
+
         movement = np.array([0.0, 0.0, 0.0])
-        
+
         # WASD movement
         if Gdk.KEY_w in self.keys_pressed or Gdk.KEY_W in self.keys_pressed:
             movement += forward * self.movement_speed
@@ -728,103 +775,105 @@ class GLView(Gtk.GLArea):
             movement[1] += self.movement_speed
         if Gdk.KEY_Shift_L in self.keys_pressed or Gdk.KEY_Shift_R in self.keys_pressed:
             movement[1] -= self.movement_speed
-        
+
         # Apply movement
         new_pos = np.array(self.camera_position) + movement
-        
+
         # Enforce ground constraint (y >= 0)
         if new_pos[1] < 0:
             new_pos[1] = 0
-        
+
         self.camera_position = new_pos.tolist()
-            
+
         self.queue_render()
         return True
 
     def get_object_at_position(self, x, y):
         """Get the object under mouse cursor"""
         self.make_current()
-        
+
         # Read depth buffer at mouse position
         viewport_height = self.get_allocated_height()
         gl_y = viewport_height - y
-        
-        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0]
-        
+
+        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][
+            0
+        ]
+
         if depth >= 1.0:
             return None
-        
+
         # Convert mouse position to world coordinates
         aspect = self.get_allocated_width() / self.get_allocated_height()
         projection = self.perspective(45.0, aspect, 0.1, 100.0)
         view = self.create_view_matrix()
-        
+
         # Unproject the point
         mouse_pos = self.unproject(x, gl_y, depth, view, projection)
-        
+
         # Find closest object
         closest_obj = None
-        min_dist = float('inf')
-        
+        min_dist = float("inf")
+
         for obj in self.objects:
-            if obj.get('is_shadow', False):
+            if obj.get("is_shadow", False):
                 continue
-                
-            obj_pos = np.array(obj['pos'])
+
+            obj_pos = np.array(obj["pos"])
             dist = np.linalg.norm(mouse_pos - obj_pos)
-            
+
             if dist < min_dist:
                 min_dist = dist
                 closest_obj = obj
-        
+
         return closest_obj
 
     def unproject(self, winx, winy, depth, view, projection):
         """Convert window coordinates to world coordinates"""
         # Calculate inverse matrix
         inv = np.linalg.inv(np.dot(projection, view))
-        
+
         # Normalized device coordinates
         x = (2.0 * winx) / self.get_allocated_width() - 1.0
         y = (2.0 * winy) / self.get_allocated_height() - 1.0
         z = 2.0 * depth - 1.0
-        
+
         # Homogeneous coordinates
         point = np.array([x, y, z, 1.0])
-        
+
         # Transform to world coordinates
         world = np.dot(inv, point)
-        
+
         # Perspective division
         world /= world[3]
-        
+
         return world[:3]
 
     def get_piece_cubes(self, piece_id):
         """Get all cubes belonging to a piece"""
-        return [obj for obj in self.objects if obj.get('piece_id', None) == piece_id]
+        return [obj for obj in self.objects if obj.get("piece_id", None) == piece_id]
 
     def move_piece(self, piece_id, delta):
         """Move all cubes in a piece by delta with collision checking"""
         # First, calculate all new positions
         test_positions = []
         piece_cubes = []
-        
+
         for obj in self.objects:
-            if obj.get('piece_id', None) == piece_id:
+            if obj.get("piece_id", None) == piece_id:
                 piece_cubes.append(obj)
                 new_pos = [
-                    obj['pos'][0] + delta[0],
-                    obj['pos'][1] + delta[1],
-                    obj['pos'][2] + delta[2]
+                    obj["pos"][0] + delta[0],
+                    obj["pos"][1] + delta[1],
+                    obj["pos"][2] + delta[2],
                 ]
                 test_positions.append(new_pos)
-        
+
         # Check if move is valid
         if not self.check_collision_at_positions(piece_id, test_positions):
             # Apply the movement
             for i, cube in enumerate(piece_cubes):
-                cube['pos'] = test_positions[i]
+                cube["pos"] = test_positions[i]
 
     def check_bounds(self, positions):
         """Check if positions are within reasonable bounds"""
@@ -838,59 +887,70 @@ class GLView(Gtk.GLArea):
         cubes = self.get_piece_cubes(piece_id)
         if not cubes:
             return
-        
+
         grid_size = 0.6  # Grid spacing
         snap_threshold = grid_size * 0.3  # Distance threshold for snapping
-        
+
         # Get shadow cube positions (the 3x3x3 grid)
         shadow_positions = []
         for obj in self.objects:
-            if obj.get('is_shadow', False):
-                shadow_positions.append(obj['pos'])
-        
+            if obj.get("is_shadow", False):
+                shadow_positions.append(obj["pos"])
+
         # Find the best alignment by checking different snap positions
         best_position = None
-        best_score = float('inf')
-        
+        best_score = float("inf")
+
         # Get current piece bounds
-        piece_positions = [cube['pos'] for cube in cubes]
+        piece_positions = [cube["pos"] for cube in cubes]
         min_pos = np.min(piece_positions, axis=0)
         max_pos = np.max(piece_positions, axis=0)
         piece_center = (min_pos + max_pos) / 2
-        
+
         # Try snapping to different grid positions
         for shadow_pos in shadow_positions:
             # Calculate potential snap position
-            snap_x = round((piece_center[0] - shadow_pos[0]) / grid_size) * grid_size + shadow_pos[0]
-            snap_y = round((piece_center[1] - shadow_pos[1]) / grid_size) * grid_size + shadow_pos[1]
-            snap_z = round((piece_center[2] - shadow_pos[2]) / grid_size) * grid_size + shadow_pos[2]
-            
+            snap_x = (
+                round((piece_center[0] - shadow_pos[0]) / grid_size) * grid_size
+                + shadow_pos[0]
+            )
+            snap_y = (
+                round((piece_center[1] - shadow_pos[1]) / grid_size) * grid_size
+                + shadow_pos[1]
+            )
+            snap_z = (
+                round((piece_center[2] - shadow_pos[2]) / grid_size) * grid_size
+                + shadow_pos[2]
+            )
+
             potential_snap = np.array([snap_x, snap_y, snap_z])
-            
+
             # Calculate how well this position aligns
             distance = np.linalg.norm(piece_center - potential_snap)
-            
+
             # Check if any cube would align perfectly with shadow cubes
             alignment_bonus = 0
             for cube in cubes:
-                cube_offset = np.array(cube['pos']) - piece_center
+                cube_offset = np.array(cube["pos"]) - piece_center
                 new_cube_pos = potential_snap + cube_offset
-                
+
                 # Check alignment with shadow cubes
                 for shadow_pos_check in shadow_positions:
                     if np.allclose(new_cube_pos, shadow_pos_check, atol=0.01):
                         alignment_bonus += 10  # Bonus for perfect alignment
-            
+
             score = distance - alignment_bonus
-            
+
             if score < best_score:
                 best_score = score
                 best_position = potential_snap
-        
+
         # Apply the best snap position if it's within threshold
         if best_position is not None:
             delta = best_position - piece_center
-            if np.linalg.norm(delta) < snap_threshold * 3:  # Allow snapping from farther away
+            if (
+                np.linalg.norm(delta) < snap_threshold * 3
+            ):  # Allow snapping from farther away
                 self.move_piece(piece_id, delta)
                 self.queue_render()
 
@@ -899,31 +959,31 @@ class GLView(Gtk.GLArea):
         # Enable blending for shadows
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        
+
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
         model = self.translate(model, position[0], position[1], position[2])
         model = self.scale_matrix(model, scale[0], scale[1], scale[2])
-        
+
         # Set uniforms
         model_loc = glGetUniformLocation(self.shader, "model")
         glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
-        
+
         color_loc = glGetUniformLocation(self.shader, "objectColor")
         glUniform3f(color_loc, color[0], color[1], color[2])
-        
+
         alpha_loc = glGetUniformLocation(self.shader, "alpha")
         glUniform1f(alpha_loc, color[3] if len(color) > 3 else 1.0)
-        
+
         use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
         glUniform1f(use_vertex_color_loc, 0.0)
-        
+
         # Draw solid cube (no wireframe for shadows)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         glBindVertexArray(self.cube_vao)
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
-        
+
         glDisable(GL_BLEND)
 
     def preview_snap(self, piece_id):
@@ -931,59 +991,63 @@ class GLView(Gtk.GLArea):
         cubes = self.get_piece_cubes(piece_id)
         if not cubes:
             return
-        
+
         grid_size = 0.6
         preview_threshold = grid_size * 0.5  # Show preview when this close
-        
+
         # Get shadow cube positions
         shadow_positions = []
         for obj in self.objects:
-            if obj.get('is_shadow', False):
-                shadow_positions.append(np.array(obj['pos']))
-        
+            if obj.get("is_shadow", False):
+                shadow_positions.append(np.array(obj["pos"]))
+
         # Check if any cube is near a shadow position
         for cube in cubes:
-            cube_pos = np.array(cube['pos'])
-            
+            cube_pos = np.array(cube["pos"])
+
             for shadow_pos in shadow_positions:
                 distance = np.linalg.norm(cube_pos - shadow_pos)
-                
+
                 if distance < preview_threshold:
                     # Highlight this shadow cube (make it brighter)
                     for obj in self.objects:
-                        if obj.get('is_shadow', False) and np.allclose(obj['pos'], shadow_pos):
+                        if obj.get("is_shadow", False) and np.allclose(
+                            obj["pos"], shadow_pos
+                        ):
                             # Temporarily brighten the shadow
-                            obj['color'] = [0.2, 0.2, 0.2, 0.7]
+                            obj["color"] = [0.2, 0.2, 0.2, 0.7]
                 else:
                     # Reset shadow color
                     for obj in self.objects:
-                        if obj.get('is_shadow', False) and np.allclose(obj['pos'], shadow_pos):
-                            obj['color'] = [0.05, 0.05, 0.05, 0.7]
+                        if obj.get("is_shadow", False) and np.allclose(
+                            obj["pos"], shadow_pos
+                        ):
+                            obj["color"] = [0.05, 0.05, 0.05, 0.7]
 
     def is_valid_placement(self, piece_id):
         """Check if current piece placement is valid (all cubes align with shadow grid)"""
         cubes = self.get_piece_cubes(piece_id)
         if not cubes:
             return False
-        
+
         shadow_positions = []
         for obj in self.objects:
-            if obj.get('is_shadow', False):
-                shadow_positions.append(np.array(obj['pos']))
-        
+            if obj.get("is_shadow", False):
+                shadow_positions.append(np.array(obj["pos"]))
+
         # Check if all piece cubes align with shadow positions
         for cube in cubes:
-            cube_pos = np.array(cube['pos'])
+            cube_pos = np.array(cube["pos"])
             aligned = False
-            
+
             for shadow_pos in shadow_positions:
                 if np.allclose(cube_pos, shadow_pos, atol=0.1):
                     aligned = True
                     break
-            
+
             if not aligned:
                 return False
-        
+
         return True
 
     def check_collision(self, piece_id):
@@ -991,33 +1055,36 @@ class GLView(Gtk.GLArea):
         piece_cubes = self.get_piece_cubes(piece_id)
         if not piece_cubes:
             return False
-        
+
         # Get positions of all other pieces
         other_positions = []
         for obj in self.objects:
-            if not obj.get('is_shadow', False) and obj.get('piece_id', None) != piece_id:
-                other_positions.append(np.array(obj['pos']))
-        
+            if (
+                not obj.get("is_shadow", False)
+                and obj.get("piece_id", None) != piece_id
+            ):
+                other_positions.append(np.array(obj["pos"]))
+
         # Check for collisions
         for cube in piece_cubes:
-            cube_pos = np.array(cube['pos'])
+            cube_pos = np.array(cube["pos"])
             for other_pos in other_positions:
                 if np.allclose(cube_pos, other_pos, atol=0.1):
                     return True  # Collision detected
-        
+
         return False
 
     def check_puzzle_complete(self):
         """Check if all 27 positions in the 3x3x3 cube are filled"""
         shadow_positions = []
         filled_positions = []
-        
+
         for obj in self.objects:
-            if obj.get('is_shadow', False):
-                shadow_positions.append(tuple(obj['pos']))
-            elif 'piece_id' in obj:
-                filled_positions.append(tuple(obj['pos']))
-        
+            if obj.get("is_shadow", False):
+                shadow_positions.append(tuple(obj["pos"]))
+            elif "piece_id" in obj:
+                filled_positions.append(tuple(obj["pos"]))
+
         # Check if all shadow positions are filled
         for shadow_pos in shadow_positions:
             filled = False
@@ -1027,36 +1094,38 @@ class GLView(Gtk.GLArea):
                     break
             if not filled:
                 return False
-        
+
         return True
-    
+
     def move_object_discrete(self, obj, direction):
         """Move object in discrete steps with collision and bounds detection"""
-        if obj and not obj.get('is_shadow', False):
+        if obj and not obj.get("is_shadow", False):
             grid_step = 1.0
-            
-            if 'piece_id' in obj:
-                piece_id = obj['piece_id']
-                
+
+            if "piece_id" in obj:
+                piece_id = obj["piece_id"]
+
                 # Calculate new positions
                 test_positions = []
                 piece_cubes = []
-                
+
                 for cube in self.objects:
-                    if cube.get('piece_id') == piece_id:
+                    if cube.get("piece_id") == piece_id:
                         piece_cubes.append(cube)
                         new_pos = [
-                            cube['pos'][0] + direction[0] * grid_step,
-                            cube['pos'][1] + direction[1] * grid_step,
-                            cube['pos'][2] + direction[2] * grid_step
+                            cube["pos"][0] + direction[0] * grid_step,
+                            cube["pos"][1] + direction[1] * grid_step,
+                            cube["pos"][2] + direction[2] * grid_step,
                         ]
                         test_positions.append(new_pos)
-                
+
                 # Check bounds and collisions
-                if self.check_bounds(test_positions) and not self.check_collision_at_positions(piece_id, test_positions):
+                if self.check_bounds(
+                    test_positions
+                ) and not self.check_collision_at_positions(piece_id, test_positions):
                     # Apply the movement
                     for i, cube in enumerate(piece_cubes):
-                        cube['pos'] = test_positions[i]
+                        cube["pos"] = test_positions[i]
                 else:
                     if not self.check_bounds(test_positions):
                         print("Out of bounds!")
@@ -1068,42 +1137,42 @@ class GLView(Gtk.GLArea):
 
     def rotate_object(self, obj, axis, angle=90):
         """Rotate entire piece around its center with collision detection"""
-        if obj and not obj.get('is_shadow', False):
-            if 'piece_id' in obj:
-                piece_id = obj['piece_id']
-                
+        if obj and not obj.get("is_shadow", False):
+            if "piece_id" in obj:
+                piece_id = obj["piece_id"]
+
                 # Get all cubes of this piece
-                piece_cubes = [o for o in self.objects if o.get('piece_id') == piece_id]
-                
+                piece_cubes = [o for o in self.objects if o.get("piece_id") == piece_id]
+
                 # Calculate piece center (rounded to grid)
-                positions = [np.array(cube['pos']) for cube in piece_cubes]
+                positions = [np.array(cube["pos"]) for cube in piece_cubes]
                 center = np.mean(positions, axis=0)
                 center = np.round(center)
-                
+
                 # Calculate new positions after rotation
                 test_positions = []
                 for cube in piece_cubes:
                     # Translate to origin
-                    relative_pos = np.array(cube['pos']) - center
-                    
+                    relative_pos = np.array(cube["pos"]) - center
+
                     # Apply rotation
-                    if axis == 'x':
+                    if axis == "x":
                         rotated = self.rotate_vector_x(relative_pos, 90)
-                    elif axis == 'y':
+                    elif axis == "y":
                         rotated = self.rotate_vector_y(relative_pos, 90)
-                    elif axis == 'z':
+                    elif axis == "z":
                         rotated = self.rotate_vector_z(relative_pos, 90)
-                    
+
                     # Translate back and round
                     new_pos = rotated + center
                     new_pos = [round(p) for p in new_pos.tolist()]
                     test_positions.append(new_pos)
-                
+
                 # Check if rotation is valid (no collisions)
                 if not self.check_collision_at_positions(piece_id, test_positions):
                     # Apply the rotation
                     for i, cube in enumerate(piece_cubes):
-                        cube['pos'] = test_positions[i]
+                        cube["pos"] = test_positions[i]
                 else:
                     print("Collision detected! Rotation blocked.")
                     self.statusbar.push(0, "Collision detected! Rotation blocked.")
@@ -1114,90 +1183,92 @@ class GLView(Gtk.GLArea):
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([
-            vec[0],
-            vec[1] * c - vec[2] * s,
-            vec[1] * s + vec[2] * c
-        ])
+        return np.array([vec[0], vec[1] * c - vec[2] * s, vec[1] * s + vec[2] * c])
 
     def rotate_vector_y(self, vec, angle):
         """Rotate a 3D vector around Y axis"""
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([
-            vec[0] * c + vec[2] * s,
-            vec[1],
-            -vec[0] * s + vec[2] * c
-        ])
+        return np.array([vec[0] * c + vec[2] * s, vec[1], -vec[0] * s + vec[2] * c])
 
     def rotate_vector_z(self, vec, angle):
         """Rotate a 3D vector around Z axis"""
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([
-            vec[0] * c - vec[1] * s,
-            vec[0] * s + vec[1] * c,
-            vec[2]
-        ])
+        return np.array([vec[0] * c - vec[1] * s, vec[0] * s + vec[1] * c, vec[2]])
 
     def snap_to_grid_position(self, position):
         """Snap a position to the nearest grid point"""
         return [
             round(position[0] / self.grid_step) * self.grid_step,
             round(position[1] / self.grid_step) * self.grid_step,
-            round(position[2] / self.grid_step) * self.grid_step
+            round(position[2] / self.grid_step) * self.grid_step,
         ]
-    
+
     def check_collision_at_positions(self, piece_id, test_positions):
         """Check if any of the test positions collide with existing pieces"""
         # Get all occupied positions except from the current piece
         occupied_positions = set()
-        
+
         for obj in self.objects:
-            if (not obj.get('is_shadow', False) and 
-                obj.get('piece_id') is not None and 
-                obj.get('piece_id') != piece_id):
+            if (
+                not obj.get("is_shadow", False)
+                and obj.get("piece_id") is not None
+                and obj.get("piece_id") != piece_id
+            ):
                 # Round positions to ensure integer comparison
-                pos = tuple(round(p) for p in obj['pos'])
+                pos = tuple(round(p) for p in obj["pos"])
                 occupied_positions.add(pos)
-        
+
         # Check if any test position collides
         for test_pos in test_positions:
             rounded_pos = tuple(round(p) for p in test_pos)
             if rounded_pos in occupied_positions:
                 return True  # Collision detected
-        
+
         return False  # No collision
-    
+
     def update_controls_hud(self):
-        if not hasattr(self, 'hud_labels'):
+        if not hasattr(self, "hud_labels"):
             return
 
         # Define the world axes and their corresponding movement keys
         key_map = {
-            'x': 'L', '-x': 'J',
-            'y': 'U', '-y': 'O',
-            'z': 'K', '-z': 'I'  # Note: Z is often "into the screen"
+            "x": "L",
+            "-x": "J",
+            "y": "U",
+            "-y": "O",
+            "z": "K",
+            "-z": "I",  # Note: Z is often "into the screen"
         }
         world_axes = {
-            'x': np.array([1, 0, 0]), '-x': np.array([-1, 0, 0]),
-            'y': np.array([0, 1, 0]), '-y': np.array([0, -1, 0]),
-            'z': np.array([0, 0, 1]), '-z': np.array([0, 0, -1]),
+            "x": np.array([1, 0, 0]),
+            "-x": np.array([-1, 0, 0]),
+            "y": np.array([0, 1, 0]),
+            "-y": np.array([0, -1, 0]),
+            "z": np.array([0, 0, 1]),
+            "-z": np.array([0, 0, -1]),
         }
 
         cam_forward, cam_right, cam_up = self.get_camera_vectors()
-        
+
         # Helper function to find the best matching world axis
         def get_best_axis(cam_vector):
             dots = [np.dot(cam_vector, axis) for axis in world_axes.values()]
-            max_dot_index = np.argmax(np.abs(dots)) # Use abs to find alignment regardless of sign
+            max_dot_index = np.argmax(
+                np.abs(dots)
+            )  # Use abs to find alignment regardless of sign
             best_axis_name = list(world_axes.keys())[max_dot_index]
             # Refine sign
             if dots[max_dot_index] < 0:
                 # Flip the sign if the dot product is negative
-                best_axis_name = best_axis_name.replace('-', '') if '-' in best_axis_name else '-' + best_axis_name
+                best_axis_name = (
+                    best_axis_name.replace("-", "")
+                    if "-" in best_axis_name
+                    else "-" + best_axis_name
+                )
             return best_axis_name
 
         # Determine the mapping for each camera direction
@@ -1214,7 +1285,10 @@ class GLView(Gtk.GLArea):
         self.hud_labels["up"].set_markup(f"<b>Up:</b>       ({key_map[up_axis]})")
         self.hud_labels["down"].set_markup(f"<b>Down:</b>     ({key_map[down_axis]})")
         self.hud_labels["forward"].set_markup(f"<b>Forward:</b>  ({key_map[fwd_axis]})")
-        self.hud_labels["backward"].set_markup(f"<b>Backward:</b> ({key_map[back_axis]})")
+        self.hud_labels["backward"].set_markup(
+            f"<b>Backward:</b> ({key_map[back_axis]})"
+        )
+
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
@@ -1236,17 +1310,21 @@ class CubeWindow(Gtk.Window):
         title_label.set_markup("<b>3D Cube World</b>")
         info_box.pack_start(title_label, False, False, 10)
 
-        info_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10)
+        info_box.pack_start(
+            Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10
+        )
 
         controls_label = Gtk.Label()
         controls_label.set_markup(
-            "<b>Controls:</b> " +
-            "WASD: Camera | Click: Select | UIOJKL: Move Object | 123: Rotate XYZ | R: Reset"
+            "<b>Controls:</b> "
+            + "WASD: Camera | Click: Select | UIOJKL: Move Object | 123: Rotate XYZ | R: Reset"
         )
         info_box.pack_start(controls_label, False, False, 0)
 
         main_box.pack_start(info_box, False, False, 0)
-        main_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+        main_box.pack_start(
+            Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0
+        )
 
         # --- Overlay and GLView setup ---
         overlay = Gtk.Overlay()
@@ -1286,9 +1364,12 @@ class CubeWindow(Gtk.Window):
 
         # Link HUD to GLView
         self.gl_area.hud_labels = {
-            "up": self.label_up, "down": self.label_down,
-            "left": self.label_left, "right": self.label_right,
-            "forward": self.label_fwd, "backward": self.label_back
+            "up": self.label_up,
+            "down": self.label_down,
+            "left": self.label_left,
+            "right": self.label_right,
+            "forward": self.label_fwd,
+            "backward": self.label_back,
         }
 
         # Status bar
@@ -1304,12 +1385,14 @@ class CubeWindow(Gtk.Window):
 
     def update_status(self):
         """Update status bar with camera position and object count."""
-        if hasattr(self.gl_area, 'camera_position'):
+        if hasattr(self.gl_area, "camera_position"):
             pos = self.gl_area.camera_position
             self.statusbar.pop(0)
-            self.statusbar.push(0,
+            self.statusbar.push(
+                0,
                 f"Camera Position: X: {pos[0]:.1f}, Y: {pos[1]:.1f}, Z: {pos[2]:.1f} | "
-                f"Objects: {len(self.gl_area.objects)}")
+                f"Objects: {len(self.gl_area.objects)}",
+            )
         return True
 
 
