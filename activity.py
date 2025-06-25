@@ -110,6 +110,25 @@ class SomaCube(activity.Activity):
             "backward": label_back,
         }
 
+        self.victory_box = Gtk.VBox(spacing=15)
+        self.victory_box.set_halign(Gtk.Align.CENTER)
+        self.victory_box.set_valign(Gtk.Align.CENTER)
+
+        victory_label = Gtk.Label()
+        victory_label.set_markup("<span size='xx-large' weight='bold'>Puzzle Complete!</span>")
+
+        play_again_button = Gtk.Button(label="Play Again")
+        play_again_button.connect('clicked', self._on_play_again_clicked)
+
+        self.victory_box.pack_start(victory_label, False, False, 0)
+        self.victory_box.pack_start(play_again_button, False, False, 0)
+
+        overlay.add_overlay(self.victory_box)
+        self.victory_box.hide() # Start with the victory screen hidden
+
+        # --- CONNECT THE SIGNAL FROM GLVIEW ---
+        self.gl_view.connect('puzzle-completed', self._on_puzzle_completed)
+
         # Add some instructions
         self.instructions = Gtk.Label()
         self.instructions.set_markup("<span size='large'>Rotate view with mouse</span>")
@@ -165,3 +184,13 @@ class SomaCube(activity.Activity):
         dialog.show_all()
         dialog.run()
         dialog.destroy()
+
+    def _on_puzzle_completed(self, gl_view):
+        """Handler for the 'puzzle-completed' signal."""
+        print("Activity received puzzle completion signal!")
+        self.victory_box.show()
+
+    def _on_play_again_clicked(self, button):
+        """Handler for the 'Play Again' button click."""
+        self.victory_box.hide()
+        self.gl_view.reset_puzzle()
