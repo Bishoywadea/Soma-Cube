@@ -1,7 +1,7 @@
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, GObject
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
@@ -48,6 +48,10 @@ void main() {
 
 
 class GLView(Gtk.GLArea):
+    __gsignals__ = {
+        'puzzle-completed': (GObject.SIGNAL_RUN_FIRST, None, ())
+    }
+
     def __init__(self):
         super().__init__()
         self.set_required_version(3, 3)
@@ -1085,6 +1089,9 @@ class GLView(Gtk.GLArea):
             elif "piece_id" in obj:
                 filled_positions.append(tuple(obj["pos"]))
 
+        if len(filled_positions) != len(shadow_positions):
+            return False
+
         # Check if all shadow positions are filled
         for shadow_pos in shadow_positions:
             filled = False
@@ -1094,7 +1101,7 @@ class GLView(Gtk.GLArea):
                     break
             if not filled:
                 return False
-
+        print("############## bug1")
         return True
 
     def move_object_discrete(self, obj, direction):
@@ -1126,13 +1133,15 @@ class GLView(Gtk.GLArea):
                     # Apply the movement
                     for i, cube in enumerate(piece_cubes):
                         cube["pos"] = test_positions[i]
+
+                    if self.check_puzzle_complete():
+                        self.emit('puzzle-completed')
+
                 else:
                     if not self.check_bounds(test_positions):
                         print("Out of bounds!")
-                        self.statusbar.push(0, "Out of bounds!")
                     else:
                         print("Collision detected!")
-                        self.statusbar.push(0, "Collision detected!")
                     GLib.timeout_add(2000, lambda: self.statusbar.pop(0))
 
     def rotate_object(self, obj, axis, angle=90):
@@ -1173,9 +1182,11 @@ class GLView(Gtk.GLArea):
                     # Apply the rotation
                     for i, cube in enumerate(piece_cubes):
                         cube["pos"] = test_positions[i]
+
+                    if self.check_puzzle_complete():
+                        self.emit('puzzle-completed')
                 else:
                     print("Collision detected! Rotation blocked.")
-                    self.statusbar.push(0, "Collision detected! Rotation blocked.")
                     GLib.timeout_add(2000, lambda: self.statusbar.pop(0))
 
     def rotate_vector_x(self, vec, angle):
@@ -1289,6 +1300,12 @@ class GLView(Gtk.GLArea):
             f"<b>Backward:</b> ({key_map[back_axis]})"
         )
 
+    def reset_puzzle(self):
+        """Resets all pieces to their starting positions."""
+        self.create_scene_objects()
+        self.selected_object = None
+        self.queue_render()
+
 
 class CubeWindow(Gtk.Window):
     def __init__(self):
@@ -1388,11 +1405,6 @@ class CubeWindow(Gtk.Window):
         if hasattr(self.gl_area, "camera_position"):
             pos = self.gl_area.camera_position
             self.statusbar.pop(0)
-            self.statusbar.push(
-                0,
-                f"Camera Position: X: {pos[0]:.1f}, Y: {pos[1]:.1f}, Z: {pos[2]:.1f} | "
-                f"Objects: {len(self.gl_area.objects)}",
-            )
         return True
 
 
