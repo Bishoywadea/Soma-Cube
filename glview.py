@@ -8,14 +8,17 @@ import numpy as np
 import math
 import random
 import ctypes
+from PIL import Image 
 
 # Vertex shader with support for per-vertex colors
 vertex_shader = """
 #version 330 core
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 color;
+layout(location = 2) in vec2 texCoord; // Add texture coordinate attribute
 
 out vec3 vertexColor;
+out vec2 TexCoord; // Pass texCoord to fragment shader
 
 uniform mat4 model;
 uniform mat4 view;
@@ -24,6 +27,7 @@ uniform mat4 projection;
 void main() {
     gl_Position = projection * view * model * vec4(position, 1.0);
     vertexColor = color;
+    TexCoord = texCoord;
 }
 """
 
@@ -31,17 +35,23 @@ void main() {
 fragment_shader = """
 #version 330 core
 in vec3 vertexColor;
+in vec2 TexCoord;
+
 out vec4 frag_color;
 
 uniform vec3 objectColor;
 uniform float useVertexColor;
-uniform float alpha = 1.0;  // Add alpha uniform
+uniform float useTexture; // Add a switch for texturing
+uniform sampler2D ourTexture; // The texture sampler
+uniform float alpha = 1.0;
 
 void main() {
-    if (useVertexColor > 0.5) {
+    if (useTexture > 0.5) {
+        frag_color = texture(ourTexture, TexCoord);
+    } else if (useVertexColor > 0.5) {
         frag_color = vec4(vertexColor, 1.0);
     } else {
-        frag_color = vec4(objectColor, alpha);  // Use alpha value
+        frag_color = vec4(objectColor, alpha);
     }
 }
 """
@@ -99,6 +109,8 @@ class GLView(Gtk.GLArea):
         # OpenGL objects
         self.cube_vao = None
         self.grid_vao = None
+        self.floor_vao = None
+        self.floor_texture = None
         self.shader = None
 
         self.selected_piece = None
@@ -121,11 +133,73 @@ class GLView(Gtk.GLArea):
             compileShader(fragment_shader, GL_FRAGMENT_SHADER),
         )
 
+        self.load_texture("PavingStones.png") 
+
         # Create geometry
         self.setup_cube()
         self.setup_grid()
+        self.setup_floor()
         self.create_scene_objects()
         GLib.idle_add(self.update_controls_hud)
+
+    def load_texture(self, filename):
+        """Loads a texture from an image file."""
+        self.floor_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.floor_texture)
+
+        # Set texture wrapping and filtering options
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        # Load image with Pillow
+        try:
+            image = Image.open(filename)
+            # OpenGL expects the 0.0 coordinate on the y-axis to be at the bottom,
+            # but images usually have 0.0 at the top.
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            img_data = image.convert("RGBA").tobytes()
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+            glGenerateMipmap(GL_TEXTURE_2D)
+        except FileNotFoundError:
+            print(f"Error: Texture file '{filename}' not found.")
+        finally:
+            glBindTexture(GL_TEXTURE_2D, 0)
+
+    def setup_floor(self):
+        """Create a textured floor quad."""
+        y_level = -0.51  # Slightly below the grid lines to avoid z-fighting
+        size = 50.0  # How large the floor is
+        texture_repeats = 50.0 # How many times the texture repeats across the floor
+
+        vertices = np.array([
+            # positions      # texture coords
+            -size, y_level,  size,  0.0, texture_repeats,
+             size, y_level,  size,  texture_repeats, texture_repeats,
+             size, y_level, -size,  texture_repeats, 0.0,
+
+            -size, y_level,  size,  0.0, texture_repeats,
+             size, y_level, -size,  texture_repeats, 0.0,
+            -size, y_level, -size,  0.0, 0.0
+        ], dtype=np.float32)
+
+        self.floor_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.floor_vao)
+
+        vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+
+        # Position attribute
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        # Texture coord attribute
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(3 * vertices.itemsize))
+        glEnableVertexAttribArray(2)
+
+        glBindVertexArray(0)
 
     def setup_cube(self):
         """Create a unit cube mesh"""
@@ -485,7 +559,7 @@ class GLView(Gtk.GLArea):
         glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection.T.flatten())
 
         # Draw grid floor
-        self.draw_grid()
+        self.draw_floor()
 
         # Enable blending for shadows (should be done here, before drawing shadows)
         glEnable(GL_BLEND)
@@ -506,6 +580,29 @@ class GLView(Gtk.GLArea):
 
         glUseProgram(0)
         return True
+
+    def draw_floor(self):
+        """Draw the textured floor."""
+        model = np.eye(4, dtype=np.float32)
+        model_loc = glGetUniformLocation(self.shader, "model")
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
+
+        # Set uniforms to use the texture
+        glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 1.0)
+        glUniform1f(glGetUniformLocation(self.shader, "useVertexColor"), 0.0)
+
+        # Bind the texture
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.floor_texture)
+        glUniform1i(glGetUniformLocation(self.shader, "ourTexture"), 0)
+
+        # Draw the floor
+        glBindVertexArray(self.floor_vao)
+        glDrawArrays(GL_TRIANGLES, 0, 6)
+        glBindVertexArray(0)
+
+        # Reset texture uniform so other objects are not affected
+        glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
 
     def draw_grid(self):
         """Draw the grid floor"""
