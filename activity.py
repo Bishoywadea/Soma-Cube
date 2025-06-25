@@ -45,10 +45,49 @@ class SomaCube(activity.Activity):
     def _setup_content(self):
         # Create main container
         self.main_box = Gtk.VBox()
+
+        # Create an Overlay to layer the HUD on top of the GL view
+        overlay = Gtk.Overlay()
+        self.main_box.pack_start(overlay, True, True, 0)
         
         # Create our OpenGL view
         self.gl_view = GLView()
-        self.gl_view.set_size_request(600, 400)
+        overlay.add(self.gl_view)
+
+        # Create a Grid to hold the HUD labels
+        controls_hud = Gtk.Grid()
+        controls_hud.set_column_spacing(10)
+        controls_hud.set_row_spacing(5)
+        controls_hud.set_halign(Gtk.Align.START)
+        controls_hud.set_valign(Gtk.Align.START)
+        controls_hud.set_margin_top(10)
+        controls_hud.set_margin_start(10)
+
+        overlay.add_overlay(controls_hud)
+        overlay.set_overlay_pass_through(controls_hud, True)
+
+        hud_title = Gtk.Label()
+        hud_title.set_markup("<b><u>Piece Controls</u></b>")
+        label_up = Gtk.Label(label="Up:")
+        label_down = Gtk.Label(label="Down:")
+        label_left = Gtk.Label(label="Left:")
+        label_right = Gtk.Label(label="Right:")
+        label_fwd = Gtk.Label(label="Forward:")
+        label_back = Gtk.Label(label="Backward:")
+
+        controls_hud.attach(hud_title, 0, 0, 2, 1)
+        controls_hud.attach(label_up, 0, 1, 2, 1)
+        controls_hud.attach(label_down, 0, 2, 2, 1)
+        controls_hud.attach(label_left, 0, 3, 2, 1)
+        controls_hud.attach(label_right, 0, 4, 2, 1)
+        controls_hud.attach(label_fwd, 0, 5, 2, 1)
+        controls_hud.attach(label_back, 0, 6, 2, 1)
+
+        self.gl_view.hud_labels = {
+            "up": label_up, "down": label_down,
+            "left": label_left, "right": label_right,
+            "forward": label_fwd, "backward": label_back
+        }
         
         # Add some instructions
         self.instructions = Gtk.Label()

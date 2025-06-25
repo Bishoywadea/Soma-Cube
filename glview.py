@@ -118,6 +118,7 @@ class GLView(Gtk.GLArea):
         self.setup_grid()
         self.setup_arrow()
         self.create_scene_objects()
+        GLib.idle_add(self.update_controls_hud)
         
     def setup_cube(self):
         """Create a unit cube mesh"""
@@ -619,73 +620,26 @@ class GLView(Gtk.GLArea):
     
     def on_mouse_release(self, widget, event):
         if event.button == 1:
-            if self.selected_piece is not None:
-                # Snap to grid
-                self.snap_to_grid(self.selected_piece)
-                
-                piece_positions = []
-                for obj in self.objects:
-                    if obj.get('piece_id') == self.selected_piece:
-                        piece_positions.append(obj['pos'])
-                
-
-                # Check if placement is valid
-                if self.is_valid_placement(self.selected_piece) and not self.check_collision(self.selected_piece):
-                    # Valid placement - maybe add a sound effect or visual feedback
-                    print(f"Piece {self.selected_piece} placed successfully!")
-                    
-                    # Check if puzzle is complete
-                    if self.check_puzzle_complete():
-                        print("Puzzle completed! Congratulations!")
-                        # You could add a celebration animation here
-                else:
-                    # Invalid placement - move piece back or show error
-                    print(f"Invalid placement for piece {self.selected_piece}")
-                    # Optionally move piece back to queue
-            
             self.last_mouse_pos = None
-            self.selected_piece = None
-            
-            # Reset all shadow colors
-            for obj in self.objects:
-                if obj.get('is_shadow', False):
-                    obj['color'] = [0.05, 0.05, 0.05, 0.7]
-            
-            self.queue_render()
             return True
     
     def on_mouse_motion(self, widget, event):
-        if self.last_mouse_pos and self.selected_piece is not None:
+        if self.last_mouse_pos and self.selected_object is None:
             dx = event.x - self.last_mouse_pos[0]
             dy = event.y - self.last_mouse_pos[1]
-            
-            # Get camera vectors
-            forward, right, up = self.get_camera_vectors()
-            
-            # Calculate movement in world space
-            move_right = right * dx * 0.01
-            move_up = up * -dy * 0.01  # Invert Y axis
-            
-            # Combine movement
-            delta = move_right + move_up
-            
-            # Move the entire piece
-            self.move_piece(self.selected_piece, delta)
-            
-            # Auto-align while dragging if close to grid
-            self.preview_snap(self.selected_piece)
-            
-            self.queue_render()
-            self.last_mouse_pos = (event.x, event.y)
-            return True
-        elif self.last_mouse_pos:
-            # Original camera rotation code
-            dx = event.x - self.last_mouse_pos[0]
-            dy = event.y - self.last_mouse_pos[1]
+
+            # Update camera rotation angles
             self.camera_rotation[1] += dx * 0.5
+            # Clamp up/down rotation to prevent flipping
+            self.camera_rotation[0] = max(-89.0, min(89.0, self.camera_rotation[0] + dy * 0.5))
+
             self.queue_render()
             self.last_mouse_pos = (event.x, event.y)
+            
+            # Update the controls HUD since camera orientation changed
+            self.update_controls_hud()
             return True
+        return False
 
     def on_scroll(self, widget, event):
         if event.direction == Gdk.ScrollDirection.UP:
@@ -1386,68 +1340,147 @@ class GLView(Gtk.GLArea):
             glDrawElements(GL_TRIANGLES, self.arrow_indices, GL_UNSIGNED_INT, None)
             glBindVertexArray(0)
 
+    def update_controls_hud(self):
+        if not hasattr(self, 'hud_labels'):
+            return
+
+        # Define the world axes and their corresponding movement keys
+        key_map = {
+            'x': 'L', '-x': 'J',
+            'y': 'U', '-y': 'O',
+            'z': 'K', '-z': 'I'  # Note: Z is often "into the screen"
+        }
+        world_axes = {
+            'x': np.array([1, 0, 0]), '-x': np.array([-1, 0, 0]),
+            'y': np.array([0, 1, 0]), '-y': np.array([0, -1, 0]),
+            'z': np.array([0, 0, 1]), '-z': np.array([0, 0, -1]),
+        }
+
+        cam_forward, cam_right, cam_up = self.get_camera_vectors()
+        
+        # Helper function to find the best matching world axis
+        def get_best_axis(cam_vector):
+            dots = [np.dot(cam_vector, axis) for axis in world_axes.values()]
+            max_dot_index = np.argmax(np.abs(dots)) # Use abs to find alignment regardless of sign
+            best_axis_name = list(world_axes.keys())[max_dot_index]
+            # Refine sign
+            if dots[max_dot_index] < 0:
+                # Flip the sign if the dot product is negative
+                best_axis_name = best_axis_name.replace('-', '') if '-' in best_axis_name else '-' + best_axis_name
+            return best_axis_name
+
+        # Determine the mapping for each camera direction
+        right_axis = get_best_axis(cam_right)
+        left_axis = get_best_axis(-cam_right)
+        up_axis = get_best_axis(cam_up)
+        down_axis = get_best_axis(-cam_up)
+        fwd_axis = get_best_axis(cam_forward)
+        back_axis = get_best_axis(-cam_forward)
+
+        # Update the HUD labels
+        self.hud_labels["right"].set_markup(f"<b>Right:</b>    ({key_map[right_axis]})")
+        self.hud_labels["left"].set_markup(f"<b>Left:</b>     ({key_map[left_axis]})")
+        self.hud_labels["up"].set_markup(f"<b>Up:</b>       ({key_map[up_axis]})")
+        self.hud_labels["down"].set_markup(f"<b>Down:</b>     ({key_map[down_axis]})")
+        self.hud_labels["forward"].set_markup(f"<b>Forward:</b>  ({key_map[fwd_axis]})")
+        self.hud_labels["backward"].set_markup(f"<b>Backward:</b> ({key_map[back_axis]})")
+
 class CubeWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="3D Cube World")
         self.set_default_size(900, 700)
-        
-        # Create a box layout
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.add(box)
-        
-        # Add title bar with info
+
+        # Main vertical box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(main_box)
+
+        # Info bar at top
         info_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         info_box.set_margin_left(10)
         info_box.set_margin_right(10)
         info_box.set_margin_top(5)
         info_box.set_margin_bottom(5)
-        
-        # Title
+
         title_label = Gtk.Label()
         title_label.set_markup("<b>3D Cube World</b>")
         info_box.pack_start(title_label, False, False, 10)
-        
-        # Separator
+
         info_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10)
-        
-        # Controls info
+
         controls_label = Gtk.Label()
         controls_label.set_markup(
             "<b>Controls:</b> " +
             "WASD: Camera | Click: Select | UIOJKL: Move Object | 123: Rotate XYZ | R: Reset"
         )
         info_box.pack_start(controls_label, False, False, 0)
-        
-        box.pack_start(info_box, False, False, 0)
-        
-        # Add separator
-        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
-        
-        # Add GL area
+
+        main_box.pack_start(info_box, False, False, 0)
+        main_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+
+        # --- Overlay and GLView setup ---
+        overlay = Gtk.Overlay()
+        main_box.pack_start(overlay, True, True, 0)
+
         self.gl_area = GLView()
-        box.pack_start(self.gl_area, True, True, 0)
-        
+        overlay.add(self.gl_area)
+
+        # HUD Grid
+        controls_hud = Gtk.Grid()
+        controls_hud.set_column_spacing(10)
+        controls_hud.set_row_spacing(5)
+        controls_hud.set_halign(Gtk.Align.START)
+        controls_hud.set_valign(Gtk.Align.START)
+        controls_hud.set_margin_top(10)
+        controls_hud.set_margin_start(10)
+
+        overlay.add_overlay(controls_hud)
+        overlay.set_overlay_pass_through(controls_hud, True)
+
+        hud_title = Gtk.Label()
+        hud_title.set_markup("<b><u>Piece Controls</u></b>")
+        self.label_up = Gtk.Label(label="Up:")
+        self.label_down = Gtk.Label(label="Down:")
+        self.label_left = Gtk.Label(label="Left:")
+        self.label_right = Gtk.Label(label="Right:")
+        self.label_fwd = Gtk.Label(label="Forward:")
+        self.label_back = Gtk.Label(label="Backward:")
+
+        controls_hud.attach(hud_title, 0, 0, 2, 1)
+        controls_hud.attach(self.label_up, 0, 1, 2, 1)
+        controls_hud.attach(self.label_down, 0, 2, 2, 1)
+        controls_hud.attach(self.label_left, 0, 3, 2, 1)
+        controls_hud.attach(self.label_right, 0, 4, 2, 1)
+        controls_hud.attach(self.label_fwd, 0, 5, 2, 1)
+        controls_hud.attach(self.label_back, 0, 6, 2, 1)
+
+        # Link HUD to GLView
+        self.gl_area.hud_labels = {
+            "up": self.label_up, "down": self.label_down,
+            "left": self.label_left, "right": self.label_right,
+            "forward": self.label_fwd, "backward": self.label_back
+        }
+
         # Status bar
         self.statusbar = Gtk.Statusbar()
-        box.pack_start(self.statusbar, False, False, 0)
-        
-        # Update status periodically
-        GLib.timeout_add(100, self.update_status)
-        
-        # Focus the GL area for keyboard input
+        main_box.pack_start(self.statusbar, False, False, 0)
+        self.gl_area.statusbar = self.statusbar
+
+        # Focus and periodic updates
         self.gl_area.grab_focus()
-        
+        GLib.timeout_add(100, self.update_status)
+
         self.connect("destroy", Gtk.main_quit)
-    
+
     def update_status(self):
-        """Update status bar with camera position"""
+        """Update status bar with camera position and object count."""
         if hasattr(self.gl_area, 'camera_position'):
             pos = self.gl_area.camera_position
             self.statusbar.pop(0)
-            self.statusbar.push(0, 
-                f"Camera Position: X: {pos[0]:.1f}, Y: {pos[1]:.1f}, Z: {pos[2]:.1f} | " +
+            self.statusbar.push(0,
+                f"Camera Position: X: {pos[0]:.1f}, Y: {pos[1]:.1f}, Z: {pos[2]:.1f} | "
                 f"Objects: {len(self.gl_area.objects)}")
         return True
+
 
 if __name__ == "__main__":
     window = CubeWindow()
