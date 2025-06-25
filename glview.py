@@ -6,6 +6,7 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
 import math
 import random
+import ctypes
 
 # Vertex shader with support for per-vertex colors
 vertex_shader = """
@@ -68,7 +69,6 @@ class GLView(Gtk.GLArea):
         
         # Objects in the scene
         self.objects = []
-        self.object_rotations = {}
         self.selected_object = None
         
         # Set up events
@@ -479,21 +479,6 @@ class GLView(Gtk.GLArea):
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
         model = self.translate(model, position[0], position[1], position[2])
-
-        # Apply rotation if exists
-        obj = None
-        for o in self.objects:
-            if np.allclose(o['pos'], position) and not o.get('is_shadow', False):
-                obj = o
-                break
-        
-        if obj and 'piece_id' in obj:
-            piece_key = f"piece_{obj['piece_id']}"
-            if piece_key in self.object_rotations:
-                rot = self.object_rotations[piece_key]
-                model = self.rotate_x(model, rot['x'])
-                model = self.rotate_y(model, rot['y'])
-                model = self.rotate_z(model, rot['z'])
 
         model = self.scale_matrix(model, scale[0], scale[1], scale[2])
         
@@ -1169,12 +1154,6 @@ class GLView(Gtk.GLArea):
                     # Apply the rotation
                     for i, cube in enumerate(piece_cubes):
                         cube['pos'] = test_positions[i]
-                    
-                    # Update visual rotation
-                    piece_key = f"piece_{piece_id}"
-                    if piece_key not in self.object_rotations:
-                        self.object_rotations[piece_key] = {'x': 0, 'y': 0, 'z': 0}
-                    self.object_rotations[piece_key][axis] = (self.object_rotations[piece_key][axis] + 90) % 360
                 else:
                     print("Collision detected! Rotation blocked.")
                     self.statusbar.push(0, "Collision detected! Rotation blocked.")
