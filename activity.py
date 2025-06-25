@@ -124,7 +124,6 @@ class SomaCube(activity.Activity):
         self.victory_box.pack_start(play_again_button, False, False, 0)
 
         overlay.add_overlay(self.victory_box)
-        self.victory_box.hide() # Start with the victory screen hidden
 
         # --- CONNECT THE SIGNAL FROM GLVIEW ---
         self.gl_view.connect('puzzle-completed', self._on_puzzle_completed)
@@ -140,6 +139,7 @@ class SomaCube(activity.Activity):
 
         self.set_canvas(self.main_box)
         self.main_box.show_all()
+        self.victory_box.hide()
 
     def _show_help(self, button):
         """Show help dialog"""
