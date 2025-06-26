@@ -56,6 +56,44 @@ void main() {
 }
 """
 
+skybox_vertex_shader = """
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+out vec3 TexCoords;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+void main()
+{
+    // Pass the vertex position as the texture coordinate for the cubemap
+    TexCoords = aPos;
+    
+    // Remove the translation part of the view matrix so the skybox
+    // follows the camera's rotation but not its position.
+    mat4 view_no_translation = mat4(mat3(view));
+    vec4 pos = projection * view_no_translation * vec4(aPos, 1.0);
+    
+    // Set the z-component to w, ensuring it's always at the maximum depth (1.0)
+    // This makes the skybox appear behind everything else.
+    gl_Position = pos.xyww;
+}
+"""
+
+skybox_fragment_shader = """
+#version 330 core
+out vec4 FragColor;
+
+in vec3 TexCoords;
+
+uniform samplerCube skybox;
+
+void main()
+{    
+    FragColor = texture(skybox, TexCoords);
+}
+"""
 
 class GLView(Gtk.GLArea):
     __gsignals__ = {
@@ -110,9 +148,12 @@ class GLView(Gtk.GLArea):
         self.cube_vao = None
         self.grid_vao = None
         self.floor_vao = None
+        self.skybox_vao = None
         self.floor_texture = None
         self.cubes_texture = None
+        self.cubemap_texture = None
         self.shader = None
+        self.skybox_shader = None
 
         self.selected_piece = None
         self.drag_offset = None
@@ -123,7 +164,7 @@ class GLView(Gtk.GLArea):
         self.make_current()
 
         # Initialize OpenGL
-        glClearColor(0.15, 0.15, 0.15, 1.0)  # Dark background
+        glClearColor(0.15, 0.15, 0.15, 1.0)
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_LINE_SMOOTH)
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
@@ -134,15 +175,125 @@ class GLView(Gtk.GLArea):
             compileShader(fragment_shader, GL_FRAGMENT_SHADER),
         )
 
+        # Create skybox shader
+        self.skybox_shader = compileProgram(
+            compileShader(skybox_vertex_shader, GL_VERTEX_SHADER),
+            compileShader(skybox_fragment_shader, GL_FRAGMENT_SHADER),
+        )
+
+
         self.floor_texture = self.load_texture("PavingStones.png") 
         self.cubes_texture = self.load_texture("Onyx.png")
+
+        # Define face order for cubemap and load it
+        self.cubemap_texture = self.load_cubemap_from_cross("LakeCubeMap.png")
+
 
         # Create geometry
         self.setup_cube()
         self.setup_grid()
         self.setup_floor()
+        self.setup_skybox()
         self.create_scene_objects()
         GLib.idle_add(self.update_controls_hud)
+    
+    def load_cubemap_from_cross(self, filename):
+        """
+        Loads a cubemap texture from a single 'cross' layout image.
+        The layout is assumed to be:
+              +---+
+              | +Y|
+          +---+---+---+---+
+          | -X| +Z| +X| -Z|
+          +---+---+---+---+
+              | -Y|
+              +---+
+        """
+        try:
+            image = Image.open(filename)
+        except FileNotFoundError:
+            print(f"Cubemap cross file not found: {filename}")
+            return None
+
+        # Validate that the image has the correct 4x3 aspect ratio for a cross layout
+        face_width = image.width // 4
+        face_height = image.height // 3
+        if face_width != face_height or image.width % 4 != 0 or image.height % 3 != 0:
+            print(f"Error: Image '{filename}' is not a valid 4x3 cubemap cross. "
+                  f"It must consist of 12 equal squares. Got face size: {face_width}x{face_height}")
+            return None
+        
+        w, h = face_width, face_height
+
+        # Define the crop boxes and target for each face from the large image
+        # Box is (left, upper, right, lower)
+        # Note: Some faces might need rotation depending on the source. This layout
+        # often works, but if a face is sideways, you may need to add a .transpose() call.
+        face_map = {
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X: (2*w, 1*h, 3*w, 2*h),  # Right
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0*w, 1*h, 1*w, 2*h),  # Left
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (1*w, 0*h, 2*w, 1*h),  # Top
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (1*w, 2*h, 2*w, 3*h),  # Bottom
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (1*w, 1*h, 2*w, 2*h),  # Front
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (3*w, 1*h, 4*w, 2*h),  # Back
+        }
+
+        texture_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_CUBE_MAP, texture_id)
+
+        for target, box in face_map.items():
+            face_image = image.crop(box)
+            
+            # The top face (+Y) often needs to be flipped/rotated.
+            # If your sky looks upside down, uncomment the next line.
+            # if target == GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
+            #     face_image = face_image.transpose(Image.ROTATE_180)
+
+            img_data = face_image.convert("RGB").tobytes()
+            glTexImage2D(target, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
+        
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
+        return texture_id
+    
+    def setup_skybox(self):
+        """Create a VAO for the skybox cube."""
+        skybox_vertices = np.array([
+            -1.0,  1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0, -1.0,
+             1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0, -1.0,
+
+            -1.0, -1.0,  1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,
+            -1.0,  1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0,
+
+             1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0,
+             1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,
+
+            -1.0, -1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0,  1.0,
+             1.0,  1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,  1.0,
+
+            -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,
+             1.0,  1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0,
+
+            -1.0, -1.0, -1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,
+             1.0, -1.0, -1.0, -1.0, -1.0,  1.0,  1.0, -1.0,  1.0
+        ], dtype=np.float32)
+
+        self.skybox_vao = glGenVertexArrays(1)
+        glBindVertexArray(self.skybox_vao)
+        
+        vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBufferData(GL_ARRAY_BUFFER, skybox_vertices.nbytes, skybox_vertices, GL_STATIC_DRAW)
+        
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * skybox_vertices.itemsize, None)
+        
+        glBindVertexArray(0)
 
     def load_texture(self, filename):
         """Loads a texture from an image file."""
@@ -464,49 +615,60 @@ class GLView(Gtk.GLArea):
         return forward, right, up
 
     def on_render(self, area, context):
-        if not self.shader:
+        if not self.shader or not self.skybox_shader:
             return False
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
         width = self.get_allocated_width()
         height = self.get_allocated_height()
         if width == 0 or height == 0:
             return False
 
         glViewport(0, 0, width, height)
-        glUseProgram(self.shader)
-
-        # Create matrices
-        aspect = width / height
-        projection = self.perspective(45.0, aspect, 0.1, 100.0)
+        
+        projection = self.perspective(45.0, width / height, 0.1, 100.0)
         view = self.create_view_matrix()
+        
+        # --- 1. Draw the main scene objects ---
+        glUseProgram(self.shader)
+        glUniformMatrix4fv(glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, view.T.flatten())
+        glUniformMatrix4fv(glGetUniformLocation(self.shader, "projection"), 1, GL_FALSE, projection.T.flatten())
 
-        # Set uniforms that don't change per object
-        view_loc = glGetUniformLocation(self.shader, "view")
-        proj_loc = glGetUniformLocation(self.shader, "projection")
-        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view.T.flatten())
-        glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection.T.flatten())
+        if self.floor_vao:
+            self.draw_floor()
 
-        # Draw grid floor
-        self.draw_floor()
-
-        # Enable blending for shadows (should be done here, before drawing shadows)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-
-        # First draw all shadow cubes
         for obj in self.objects:
             if obj.get("is_shadow", False):
                 self.draw_shadow_cube(obj["pos"], obj["scale"], obj["color"])
-
-        # Disable blending for regular objects
         glDisable(GL_BLEND)
 
-        # Then draw all regular cubes
         for obj in self.objects:
             if not obj.get("is_shadow", False):
                 self.draw_cube(obj)
+
+        # --- 2. Draw the skybox (only if it was loaded successfully) ---
+        if self.skybox_vao and self.cubemap_texture:
+            glDepthFunc(GL_LEQUAL)
+
+            glUseProgram(self.skybox_shader)
+            
+            # This is a clean way to remove the translation from the view matrix
+            view_no_translation = np.array(view)
+            view_no_translation[3, :3] = 0.0
+
+            glUniformMatrix4fv(glGetUniformLocation(self.skybox_shader, "view"), 1, GL_FALSE, view_no_translation.T.flatten())
+            glUniformMatrix4fv(glGetUniformLocation(self.skybox_shader, "projection"), 1, GL_FALSE, projection.T.flatten())
+
+            glBindVertexArray(self.skybox_vao)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_CUBE_MAP, self.cubemap_texture)
+            glUniform1i(glGetUniformLocation(self.skybox_shader, "skybox"), 0)
+            glDrawArrays(GL_TRIANGLES, 0, 36)
+            glBindVertexArray(0)
+            
+            glDepthFunc(GL_LESS)
 
         glUseProgram(0)
         return True
