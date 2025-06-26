@@ -350,63 +350,6 @@ class GLView(Gtk.GLArea):
         glBindVertexArray(0)
         self.grid_vertices = len(vertices) // 3
 
-    def is_valid_position(self, piece_type, position, rotation):
-        """Check if position is valid (similar to first implementation)"""
-        new_positions = self.get_piece_positions(piece_type, position, rotation)
-
-        # Check collision with occupied spaces
-        for obj in self.objects:
-            if not obj.get("is_shadow", False) and "piece_id" in obj:
-                obj_pos = tuple(round(p) for p in obj["pos"])
-                if obj_pos in new_positions:
-                    return False
-
-        return True
-
-    def is_valid_movement(self, piece_id, new_positions):
-        """Check if piece movement is valid"""
-        # Check each new position
-        for new_pos in new_positions:
-            # Check collision with other pieces
-            for obj in self.objects:
-                if (
-                    not obj.get("is_shadow", False)
-                    and obj.get("piece_id") != piece_id
-                    and "piece_id" in obj
-                ):
-                    if np.allclose(new_pos, obj["pos"], atol=0.1):
-                        return False
-
-            # Optional: Check bounds (keep pieces within reasonable area)
-            if abs(new_pos[0]) > 10 or abs(new_pos[1]) > 10 or abs(new_pos[2]) > 10:
-                return False
-
-        return True
-
-    def is_valid_rotation(self, piece_id, new_positions):
-        """Check if piece rotation is valid"""
-        return self.is_valid_movement(piece_id, new_positions)
-
-    def get_piece_positions(self, piece_type, position, rotation):
-        """Get all cube positions for a piece type at given position/rotation"""
-        # This would need to be adapted from the Pygame version
-        # For now, using the current piece positions
-        piece_id = None
-        for obj in self.objects:
-            if obj.get("piece_type") == piece_type:
-                piece_id = obj.get("piece_id")
-                break
-
-        if piece_id is None:
-            return set()
-
-        positions = set()
-        for obj in self.objects:
-            if obj.get("piece_id") == piece_id:
-                positions.add(tuple(round(p) for p in obj["pos"]))
-
-        return positions
-
     def create_scene_objects(self):
         """Create the 7 Soma cube pieces in the scene"""
         self.objects = []
@@ -490,14 +433,6 @@ class GLView(Gtk.GLArea):
                     }
                 )
 
-    def get_random_color(self):
-        """Generate a random RGB color with good visibility"""
-        return [
-            random.uniform(0.3, 0.9),  # Red
-            random.uniform(0.3, 0.9),  # Green
-            random.uniform(0.3, 0.9),  # Blue
-        ]
-
     def get_camera_vectors(self):
         """Calculate forward, right, and up vectors based on camera rotation"""
         pitch = math.radians(self.camera_rotation[0])
@@ -519,19 +454,6 @@ class GLView(Gtk.GLArea):
         up = up / np.linalg.norm(up)
 
         return forward, right, up
-
-    def check_object_hit(self, x, y):
-        """Check if mouse click hits an object"""
-        self.make_current()
-
-        viewport_height = self.get_allocated_height()
-        gl_y = viewport_height - y
-
-        depth = glReadPixels(int(x), int(gl_y), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][
-            0
-        ]
-
-        return depth < 1.0
 
     def on_render(self, area, context):
         if not self.shader:
@@ -603,20 +525,6 @@ class GLView(Gtk.GLArea):
 
         # Reset texture uniform so other objects are not affected
         glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
-
-    def draw_grid(self):
-        """Draw the grid floor"""
-        model = np.eye(4, dtype=np.float32)
-        model_loc = glGetUniformLocation(self.shader, "model")
-        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
-
-        # Use vertex colors for grid
-        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
-        glUniform1f(use_vertex_color_loc, 1.0)
-
-        glBindVertexArray(self.grid_vao)
-        glDrawArrays(GL_LINES, 0, self.grid_vertices)
-        glBindVertexArray(0)
 
     def draw_cube(self, position, scale, color):
         """Draw a cube at the specified position with given scale and color"""
@@ -946,32 +854,6 @@ class GLView(Gtk.GLArea):
 
         return world[:3]
 
-    def get_piece_cubes(self, piece_id):
-        """Get all cubes belonging to a piece"""
-        return [obj for obj in self.objects if obj.get("piece_id", None) == piece_id]
-
-    def move_piece(self, piece_id, delta):
-        """Move all cubes in a piece by delta with collision checking"""
-        # First, calculate all new positions
-        test_positions = []
-        piece_cubes = []
-
-        for obj in self.objects:
-            if obj.get("piece_id", None) == piece_id:
-                piece_cubes.append(obj)
-                new_pos = [
-                    obj["pos"][0] + delta[0],
-                    obj["pos"][1] + delta[1],
-                    obj["pos"][2] + delta[2],
-                ]
-                test_positions.append(new_pos)
-
-        # Check if move is valid
-        if not self.check_collision_at_positions(piece_id, test_positions):
-            # Apply the movement
-            for i, cube in enumerate(piece_cubes):
-                cube["pos"] = test_positions[i]
-
     def check_bounds(self, positions):
         """Check if positions are within reasonable bounds"""
         for pos in positions:
@@ -1010,56 +892,6 @@ class GLView(Gtk.GLArea):
         glBindVertexArray(0)
 
         glDisable(GL_BLEND)
-
-    def is_valid_placement(self, piece_id):
-        """Check if current piece placement is valid (all cubes align with shadow grid)"""
-        cubes = self.get_piece_cubes(piece_id)
-        if not cubes:
-            return False
-
-        shadow_positions = []
-        for obj in self.objects:
-            if obj.get("is_shadow", False):
-                shadow_positions.append(np.array(obj["pos"]))
-
-        # Check if all piece cubes align with shadow positions
-        for cube in cubes:
-            cube_pos = np.array(cube["pos"])
-            aligned = False
-
-            for shadow_pos in shadow_positions:
-                if np.allclose(cube_pos, shadow_pos, atol=0.1):
-                    aligned = True
-                    break
-
-            if not aligned:
-                return False
-
-        return True
-
-    def check_collision(self, piece_id):
-        """Check if piece collides with other placed pieces"""
-        piece_cubes = self.get_piece_cubes(piece_id)
-        if not piece_cubes:
-            return False
-
-        # Get positions of all other pieces
-        other_positions = []
-        for obj in self.objects:
-            if (
-                not obj.get("is_shadow", False)
-                and obj.get("piece_id", None) != piece_id
-            ):
-                other_positions.append(np.array(obj["pos"]))
-
-        # Check for collisions
-        for cube in piece_cubes:
-            cube_pos = np.array(cube["pos"])
-            for other_pos in other_positions:
-                if np.allclose(cube_pos, other_pos, atol=0.1):
-                    return True  # Collision detected
-
-        return False
 
     def check_puzzle_complete(self):
         """Check if all 27 positions in the 3x3x3 cube are filled"""
