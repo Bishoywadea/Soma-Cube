@@ -111,6 +111,7 @@ class GLView(Gtk.GLArea):
         self.grid_vao = None
         self.floor_vao = None
         self.floor_texture = None
+        self.cubes_texture = None
         self.shader = None
 
         self.selected_piece = None
@@ -133,7 +134,8 @@ class GLView(Gtk.GLArea):
             compileShader(fragment_shader, GL_FRAGMENT_SHADER),
         )
 
-        self.load_texture("PavingStones.png") 
+        self.floor_texture = self.load_texture("PavingStones.png") 
+        self.cubes_texture = self.load_texture("Onyx.png")
 
         # Create geometry
         self.setup_cube()
@@ -144,8 +146,8 @@ class GLView(Gtk.GLArea):
 
     def load_texture(self, filename):
         """Loads a texture from an image file."""
-        self.floor_texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.floor_texture)
+        texture_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, texture_id)
 
         # Set texture wrapping and filtering options
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
@@ -167,6 +169,8 @@ class GLView(Gtk.GLArea):
             print(f"Error: Texture file '{filename}' not found.")
         finally:
             glBindTexture(GL_TEXTURE_2D, 0)
+        
+        return texture_id
 
     def setup_floor(self):
         """Create a textured floor quad."""
@@ -205,6 +209,8 @@ class GLView(Gtk.GLArea):
         """Create a unit cube mesh"""
         vertices = []
         colors = []
+        tex_coords = []
+        face_uvs = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
         # Define cube faces with colors
         faces = [
@@ -252,7 +258,8 @@ class GLView(Gtk.GLArea):
         for face in faces:
             for vertex in face:
                 vertices.extend(vertex)
-                colors.extend([0.8, 0.8, 0.8])  # Default gray color
+                colors.extend([0.8, 0.8, 0.8])
+            tex_coords.extend(face_uvs)
 
             # Two triangles per face
             base = vertex_count
@@ -261,6 +268,7 @@ class GLView(Gtk.GLArea):
 
         vertices = np.array(vertices, dtype=np.float32)
         colors = np.array(colors, dtype=np.float32)
+        tex_coords = np.array(tex_coords, dtype=np.float32)
         indices = np.array(indices, dtype=np.uint32)
 
         # Create VAO
@@ -270,30 +278,29 @@ class GLView(Gtk.GLArea):
         # Vertex buffer
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(
-            GL_ARRAY_BUFFER,
-            vertices.nbytes + colors.nbytes,
-            None,
-            GL_STATIC_DRAW
-        )
+
+        # Allocate space for vertices, colors, AND texture coordinates
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes + tex_coords.nbytes, None, GL_STATIC_DRAW)
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
-        glBufferSubData(GL_ARRAY_BUFFER,
-                        vertices.nbytes,
-                        colors.nbytes,
-                        colors)
+        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
+        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, tex_coords.nbytes, tex_coords)
 
         # Index buffer
         ebo = glGenBuffers(1)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
 
-        # Attributes
+        # Vertex Attribute
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(
-            1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes)
-        )
+
+        # Color Attribute
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
         glEnableVertexAttribArray(1)
+
+        # Texture Coordinate Attribute (at location 2)
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes + colors.nbytes))
+        glEnableVertexAttribArray(2)
 
         glBindVertexArray(0)
         self.cube_indices = len(indices)
@@ -428,8 +435,9 @@ class GLView(Gtk.GLArea):
                         ],
                         "color": piece_color,
                         "scale": [cube_size] * 3,
-                        "piece_id": i,  # Identify which piece this cube belongs to
-                        "piece_type": f"piece_{i}",  # Add piece type for reference
+                        "piece_id": i,
+                        "piece_type": f"piece_{i}",
+                        "texture": self.cubes_texture,
                     }
                 )
 
@@ -498,7 +506,7 @@ class GLView(Gtk.GLArea):
         # Then draw all regular cubes
         for obj in self.objects:
             if not obj.get("is_shadow", False):
-                self.draw_cube(obj["pos"], obj["scale"], obj["color"])
+                self.draw_cube(obj)
 
         glUseProgram(0)
         return True
@@ -526,44 +534,51 @@ class GLView(Gtk.GLArea):
         # Reset texture uniform so other objects are not affected
         glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
 
-    def draw_cube(self, position, scale, color):
-        """Draw a cube at the specified position with given scale and color"""
+    def draw_cube(self, obj):
+        """Draw a cube, using a texture if available, otherwise a solid color."""
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
-        model = self.translate(model, position[0], position[1], position[2])
+        model = self.translate(model, obj["pos"][0], obj["pos"][1], obj["pos"][2])
+        model = self.scale_matrix(model, obj["scale"][0], obj["scale"][1], obj["scale"][2])
 
-        model = self.scale_matrix(model, scale[0], scale[1], scale[2])
-
-        # Set uniforms
+        # Set model matrix uniform
         model_loc = glGetUniformLocation(self.shader, "model")
         glUniformMatrix4fv(model_loc, 1, GL_FALSE, model.T.flatten())
 
-        # Highlight selected object
-        if self.selected_object and np.allclose(
-            self.selected_object["pos"], position, atol=0.01
-        ):
-            glUniform3f(
-                glGetUniformLocation(self.shader, "objectColor"),
-                min(color[0] * 1.5, 1.0),
-                min(color[1] * 1.5, 1.0),
-                min(color[2] * 1.5, 1.0),
-            )
+        # Check if the object has a texture
+        obj_texture = obj.get("texture")
+        if obj_texture:
+            glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 1.0)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, obj_texture)
+            glUniform1i(glGetUniformLocation(self.shader, "ourTexture"), 0)
         else:
-            color_loc = glGetUniformLocation(self.shader, "objectColor")
-            glUniform3f(color_loc, color[0], color[1], color[2])
+            # Fallback to solid color if no texture
+            glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
+            color = obj["color"]
+            # Highlight selected object
+            if self.selected_object and self.selected_object is obj:
+                glUniform3f(
+                    glGetUniformLocation(self.shader, "objectColor"),
+                    min(color[0] * 1.5, 1.0),
+                    min(color[1] * 1.5, 1.0),
+                    min(color[2] * 1.5, 1.0),
+                )
+            else:
+                glUniform3f(glGetUniformLocation(self.shader, "objectColor"), color[0], color[1], color[2])
 
-        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
-        glUniform1f(use_vertex_color_loc, 0.0)
+        glUniform1f(glGetUniformLocation(self.shader, "useVertexColor"), 0.0)
 
         # Draw solid cube
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         glBindVertexArray(self.cube_vao)
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
 
-        # Draw wireframe outline
+        # Draw wireframe outline (always black)
+        glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 0.0, 0.0, 0.0)
-        glLineWidth(1.5)
+        glLineWidth(2.0 if self.selected_object and self.selected_object['piece_id'] == obj['piece_id'] else 1.5)
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glLineWidth(1.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
