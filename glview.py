@@ -8,7 +8,7 @@ import numpy as np
 import math
 import random
 import ctypes
-from PIL import Image 
+from PIL import Image
 
 # Vertex shader with support for per-vertex colors
 vertex_shader = """
@@ -95,10 +95,9 @@ void main()
 }
 """
 
+
 class GLView(Gtk.GLArea):
-    __gsignals__ = {
-        'puzzle-completed': (GObject.SIGNAL_RUN_FIRST, None, ())
-    }
+    __gsignals__ = {"puzzle-completed": (GObject.SIGNAL_RUN_FIRST, None, ())}
 
     def __init__(self):
         super().__init__()
@@ -181,13 +180,11 @@ class GLView(Gtk.GLArea):
             compileShader(skybox_fragment_shader, GL_FRAGMENT_SHADER),
         )
 
-
-        self.floor_texture = self.load_texture("PavingStones.png") 
+        self.floor_texture = self.load_texture("PavingStones.png")
         self.cubes_texture = self.load_texture("Onyx.png")
 
         # Define face order for cubemap and load it
         self.cubemap_texture = self.load_cubemap_from_cross("LakeCubeMap.png")
-
 
         # Create geometry
         self.setup_cube()
@@ -196,7 +193,7 @@ class GLView(Gtk.GLArea):
         self.setup_skybox()
         self.create_scene_objects()
         GLib.idle_add(self.update_controls_hud)
-    
+
     def load_cubemap_from_cross(self, filename):
         """
         Loads a cubemap texture from a single 'cross' layout image.
@@ -219,10 +216,12 @@ class GLView(Gtk.GLArea):
         face_width = image.width // 4
         face_height = image.height // 3
         if face_width != face_height or image.width % 4 != 0 or image.height % 3 != 0:
-            print(f"Error: Image '{filename}' is not a valid 4x3 cubemap cross. "
-                  f"It must consist of 12 equal squares. Got face size: {face_width}x{face_height}")
+            print(
+                f"Error: Image '{filename}' is not a valid 4x3 cubemap cross. "
+                f"It must consist of 12 equal squares. Got face size: {face_width}x{face_height}"
+            )
             return None
-        
+
         w, h = face_width, face_height
 
         # Define the crop boxes and target for each face from the large image
@@ -230,12 +229,12 @@ class GLView(Gtk.GLArea):
         # Note: Some faces might need rotation depending on the source. This layout
         # often works, but if a face is sideways, you may need to add a .transpose() call.
         face_map = {
-            GL_TEXTURE_CUBE_MAP_POSITIVE_X: (2*w, 1*h, 3*w, 2*h),  # Right
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0*w, 1*h, 1*w, 2*h),  # Left
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (1*w, 0*h, 2*w, 1*h),  # Top
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (1*w, 2*h, 2*w, 3*h),  # Bottom
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (1*w, 1*h, 2*w, 2*h),  # Front
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (3*w, 1*h, 4*w, 2*h),  # Back
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X: (2 * w, 1 * h, 3 * w, 2 * h),  # Right
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0 * w, 1 * h, 1 * w, 2 * h),  # Left
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (1 * w, 0 * h, 2 * w, 1 * h),  # Top
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (1 * w, 2 * h, 2 * w, 3 * h),  # Bottom
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (1 * w, 1 * h, 2 * w, 2 * h),  # Front
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (3 * w, 1 * h, 4 * w, 2 * h),  # Back
         }
 
         texture_id = glGenTextures(1)
@@ -243,7 +242,7 @@ class GLView(Gtk.GLArea):
 
         for target, box in face_map.items():
             face_image = image.crop(box)
-            
+
             # The top face (+Y) often needs to be flipped/rotated.
             # If your sky looks upside down, uncomment the next line.
             # if target == GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
@@ -257,10 +256,10 @@ class GLView(Gtk.GLArea):
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
-        
+
         glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
         return texture_id
-    
+
     def setup_skybox(self):
         """Create a VAO for the skybox cube."""
         skybox_vertices = np.array([
@@ -285,14 +284,18 @@ class GLView(Gtk.GLArea):
 
         self.skybox_vao = glGenVertexArrays(1)
         glBindVertexArray(self.skybox_vao)
-        
+
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, skybox_vertices.nbytes, skybox_vertices, GL_STATIC_DRAW)
-        
+        glBufferData(
+            GL_ARRAY_BUFFER, skybox_vertices.nbytes, skybox_vertices, GL_STATIC_DRAW
+        )
+
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * skybox_vertices.itemsize, None)
-        
+        glVertexAttribPointer(
+            0, 3, GL_FLOAT, GL_FALSE, 3 * skybox_vertices.itemsize, None
+        )
+
         glBindVertexArray(0)
 
     def load_texture(self, filename):
@@ -314,20 +317,30 @@ class GLView(Gtk.GLArea):
             image = image.transpose(Image.FLIP_TOP_BOTTOM)
             img_data = image.convert("RGBA").tobytes()
 
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+            glTexImage2D(
+                GL_TEXTURE_2D,
+                0,
+                GL_RGBA,
+                image.width,
+                image.height,
+                0,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                img_data,
+            )
             glGenerateMipmap(GL_TEXTURE_2D)
         except FileNotFoundError:
             print(f"Error: Texture file '{filename}' not found.")
         finally:
             glBindTexture(GL_TEXTURE_2D, 0)
-        
+
         return texture_id
 
     def setup_floor(self):
         """Create a textured floor quad."""
         y_level = -0.51  # Slightly below the grid lines to avoid z-fighting
         size = 50.0  # How large the floor is
-        texture_repeats = 50.0 # How many times the texture repeats across the floor
+        texture_repeats = 50.0  # How many times the texture repeats across the floor
 
         vertices = np.array([
             # positions      # texture coords
@@ -348,10 +361,19 @@ class GLView(Gtk.GLArea):
         glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
 
         # Position attribute
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(0))
+        glVertexAttribPointer(
+            0, 3, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(0)
+        )
         glEnableVertexAttribArray(0)
         # Texture coord attribute
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * vertices.itemsize, ctypes.c_void_p(3 * vertices.itemsize))
+        glVertexAttribPointer(
+            2,
+            2,
+            GL_FLOAT,
+            GL_FALSE,
+            5 * vertices.itemsize,
+            ctypes.c_void_p(3 * vertices.itemsize),
+        )
         glEnableVertexAttribArray(2)
 
         glBindVertexArray(0)
@@ -431,10 +453,20 @@ class GLView(Gtk.GLArea):
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
 
         # Allocate space for vertices, colors, AND texture coordinates
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes + tex_coords.nbytes, None, GL_STATIC_DRAW)
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes + colors.nbytes + tex_coords.nbytes,
+            None,
+            GL_STATIC_DRAW,
+        )
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
         glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
-        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, tex_coords.nbytes, tex_coords)
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes + colors.nbytes,
+            tex_coords.nbytes,
+            tex_coords,
+        )
 
         # Index buffer
         ebo = glGenBuffers(1)
@@ -446,11 +478,20 @@ class GLView(Gtk.GLArea):
         glEnableVertexAttribArray(0)
 
         # Color Attribute
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes))
+        glVertexAttribPointer(
+            1, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes)
+        )
         glEnableVertexAttribArray(1)
 
         # Texture Coordinate Attribute (at location 2)
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(vertices.nbytes + colors.nbytes))
+        glVertexAttribPointer(
+            2,
+            2,
+            GL_FLOAT,
+            GL_FALSE,
+            0,
+            ctypes.c_void_p(vertices.nbytes + colors.nbytes),
+        )
         glEnableVertexAttribArray(2)
 
         glBindVertexArray(0)
@@ -625,14 +666,21 @@ class GLView(Gtk.GLArea):
             return False
 
         glViewport(0, 0, width, height)
-        
+
         projection = self.perspective(45.0, width / height, 0.1, 100.0)
         view = self.create_view_matrix()
-        
+
         # --- 1. Draw the main scene objects ---
         glUseProgram(self.shader)
-        glUniformMatrix4fv(glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, view.T.flatten())
-        glUniformMatrix4fv(glGetUniformLocation(self.shader, "projection"), 1, GL_FALSE, projection.T.flatten())
+        glUniformMatrix4fv(
+            glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, view.T.flatten()
+        )
+        glUniformMatrix4fv(
+            glGetUniformLocation(self.shader, "projection"),
+            1,
+            GL_FALSE,
+            projection.T.flatten(),
+        )
 
         if self.floor_vao:
             self.draw_floor()
@@ -653,13 +701,23 @@ class GLView(Gtk.GLArea):
             glDepthFunc(GL_LEQUAL)
 
             glUseProgram(self.skybox_shader)
-            
+
             # This is a clean way to remove the translation from the view matrix
             view_no_translation = np.array(view)
             view_no_translation[3, :3] = 0.0
 
-            glUniformMatrix4fv(glGetUniformLocation(self.skybox_shader, "view"), 1, GL_FALSE, view_no_translation.T.flatten())
-            glUniformMatrix4fv(glGetUniformLocation(self.skybox_shader, "projection"), 1, GL_FALSE, projection.T.flatten())
+            glUniformMatrix4fv(
+                glGetUniformLocation(self.skybox_shader, "view"),
+                1,
+                GL_FALSE,
+                view_no_translation.T.flatten(),
+            )
+            glUniformMatrix4fv(
+                glGetUniformLocation(self.skybox_shader, "projection"),
+                1,
+                GL_FALSE,
+                projection.T.flatten(),
+            )
 
             glBindVertexArray(self.skybox_vao)
             glActiveTexture(GL_TEXTURE0)
@@ -667,7 +725,7 @@ class GLView(Gtk.GLArea):
             glUniform1i(glGetUniformLocation(self.skybox_shader, "skybox"), 0)
             glDrawArrays(GL_TRIANGLES, 0, 36)
             glBindVertexArray(0)
-            
+
             glDepthFunc(GL_LESS)
 
         glUseProgram(0)
@@ -701,7 +759,9 @@ class GLView(Gtk.GLArea):
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
         model = self.translate(model, obj["pos"][0], obj["pos"][1], obj["pos"][2])
-        model = self.scale_matrix(model, obj["scale"][0], obj["scale"][1], obj["scale"][2])
+        model = self.scale_matrix(
+            model, obj["scale"][0], obj["scale"][1], obj["scale"][2]
+        )
 
         # Set model matrix uniform
         model_loc = glGetUniformLocation(self.shader, "model")
@@ -727,7 +787,12 @@ class GLView(Gtk.GLArea):
                     min(color[2] * 1.5, 1.0),
                 )
             else:
-                glUniform3f(glGetUniformLocation(self.shader, "objectColor"), color[0], color[1], color[2])
+                glUniform3f(
+                    glGetUniformLocation(self.shader, "objectColor"),
+                    color[0],
+                    color[1],
+                    color[2],
+                )
 
         glUniform1f(glGetUniformLocation(self.shader, "useVertexColor"), 0.0)
 
@@ -740,7 +805,12 @@ class GLView(Gtk.GLArea):
         glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 0.0, 0.0, 0.0)
-        glLineWidth(2.0 if self.selected_object and self.selected_object['piece_id'] == obj['piece_id'] else 1.5)
+        glLineWidth(
+            2.0
+            if self.selected_object
+            and self.selected_object["piece_id"] == obj["piece_id"]
+            else 1.5
+        )
         glDrawElements(GL_TRIANGLES, self.cube_indices, GL_UNSIGNED_INT, None)
         glLineWidth(1.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
@@ -1004,7 +1074,7 @@ class GLView(Gtk.GLArea):
             if dist < min_dist:
                 min_dist = dist
                 closest_obj = obj
-        
+
         if min_dist > 1.2:
             return None
 
@@ -1127,7 +1197,7 @@ class GLView(Gtk.GLArea):
                         cube["pos"] = test_positions[i]
 
                     if self.check_puzzle_complete():
-                        self.emit('puzzle-completed')
+                        self.emit("puzzle-completed")
 
                 else:
                     if not self.check_bounds(test_positions):
@@ -1176,7 +1246,7 @@ class GLView(Gtk.GLArea):
                         cube["pos"] = test_positions[i]
 
                     if self.check_puzzle_complete():
-                        self.emit('puzzle-completed')
+                        self.emit("puzzle-completed")
                 else:
                     print("Collision detected! Rotation blocked.")
                     GLib.timeout_add(2000, lambda: self.statusbar.pop(0))
