@@ -555,7 +555,7 @@ class GLView(Gtk.GLArea):
         cube_size = 1.0  # Integer grid size
         grid_size = 3
         grid_spacing = 1.0
-        shadow_color = [0.05, 0.05, 0.05, 0.7]
+        shadow_color = [0.05, 0.05, 0.05, 0.2]
         base_y = 1  # Base height for the 3x3x3 grid
 
         # Create shadow cubes (the target 3x3x3 grid)
