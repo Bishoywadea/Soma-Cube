@@ -662,13 +662,6 @@ class GLView(Gtk.GLArea):
 
         glBindVertexArray(0)
 
-    def snap_piece_to_grid(self, piece_id):
-        """Snap all cubes of a piece to grid after rotation"""
-        piece_cubes = [o for o in self.objects if o.get("piece_id") == piece_id]
-
-        for cube in piece_cubes:
-            cube["pos"] = self.snap_to_grid_position(cube["pos"])
-
     def create_view_matrix(self):
         """Create view matrix with camera rotations"""
         view = np.eye(4, dtype=np.float32)
@@ -986,78 +979,6 @@ class GLView(Gtk.GLArea):
                 return False
         return True
 
-    def snap_to_grid(self, piece_id):
-        """Snap piece to nearest valid grid position with edge alignment"""
-        cubes = self.get_piece_cubes(piece_id)
-        if not cubes:
-            return
-
-        grid_size = 0.6  # Grid spacing
-        snap_threshold = grid_size * 0.3  # Distance threshold for snapping
-
-        # Get shadow cube positions (the 3x3x3 grid)
-        shadow_positions = []
-        for obj in self.objects:
-            if obj.get("is_shadow", False):
-                shadow_positions.append(obj["pos"])
-
-        # Find the best alignment by checking different snap positions
-        best_position = None
-        best_score = float("inf")
-
-        # Get current piece bounds
-        piece_positions = [cube["pos"] for cube in cubes]
-        min_pos = np.min(piece_positions, axis=0)
-        max_pos = np.max(piece_positions, axis=0)
-        piece_center = (min_pos + max_pos) / 2
-
-        # Try snapping to different grid positions
-        for shadow_pos in shadow_positions:
-            # Calculate potential snap position
-            snap_x = (
-                round((piece_center[0] - shadow_pos[0]) / grid_size) * grid_size
-                + shadow_pos[0]
-            )
-            snap_y = (
-                round((piece_center[1] - shadow_pos[1]) / grid_size) * grid_size
-                + shadow_pos[1]
-            )
-            snap_z = (
-                round((piece_center[2] - shadow_pos[2]) / grid_size) * grid_size
-                + shadow_pos[2]
-            )
-
-            potential_snap = np.array([snap_x, snap_y, snap_z])
-
-            # Calculate how well this position aligns
-            distance = np.linalg.norm(piece_center - potential_snap)
-
-            # Check if any cube would align perfectly with shadow cubes
-            alignment_bonus = 0
-            for cube in cubes:
-                cube_offset = np.array(cube["pos"]) - piece_center
-                new_cube_pos = potential_snap + cube_offset
-
-                # Check alignment with shadow cubes
-                for shadow_pos_check in shadow_positions:
-                    if np.allclose(new_cube_pos, shadow_pos_check, atol=0.01):
-                        alignment_bonus += 10  # Bonus for perfect alignment
-
-            score = distance - alignment_bonus
-
-            if score < best_score:
-                best_score = score
-                best_position = potential_snap
-
-        # Apply the best snap position if it's within threshold
-        if best_position is not None:
-            delta = best_position - piece_center
-            if (
-                np.linalg.norm(delta) < snap_threshold * 3
-            ):  # Allow snapping from farther away
-                self.move_piece(piece_id, delta)
-                self.queue_render()
-
     def draw_shadow_cube(self, position, scale, color):
         """Draw a shadow cube with transparency"""
         # Enable blending for shadows
@@ -1089,44 +1010,6 @@ class GLView(Gtk.GLArea):
         glBindVertexArray(0)
 
         glDisable(GL_BLEND)
-
-    def preview_snap(self, piece_id):
-        """Show preview of where piece will snap (visual feedback)"""
-        cubes = self.get_piece_cubes(piece_id)
-        if not cubes:
-            return
-
-        grid_size = 0.6
-        preview_threshold = grid_size * 0.5  # Show preview when this close
-
-        # Get shadow cube positions
-        shadow_positions = []
-        for obj in self.objects:
-            if obj.get("is_shadow", False):
-                shadow_positions.append(np.array(obj["pos"]))
-
-        # Check if any cube is near a shadow position
-        for cube in cubes:
-            cube_pos = np.array(cube["pos"])
-
-            for shadow_pos in shadow_positions:
-                distance = np.linalg.norm(cube_pos - shadow_pos)
-
-                if distance < preview_threshold:
-                    # Highlight this shadow cube (make it brighter)
-                    for obj in self.objects:
-                        if obj.get("is_shadow", False) and np.allclose(
-                            obj["pos"], shadow_pos
-                        ):
-                            # Temporarily brighten the shadow
-                            obj["color"] = [0.2, 0.2, 0.2, 0.7]
-                else:
-                    # Reset shadow color
-                    for obj in self.objects:
-                        if obj.get("is_shadow", False) and np.allclose(
-                            obj["pos"], shadow_pos
-                        ):
-                            obj["color"] = [0.05, 0.05, 0.05, 0.7]
 
     def is_valid_placement(self, piece_id):
         """Check if current piece placement is valid (all cubes align with shadow grid)"""
@@ -1309,14 +1192,6 @@ class GLView(Gtk.GLArea):
         c = math.cos(rad)
         s = math.sin(rad)
         return np.array([vec[0] * c - vec[1] * s, vec[0] * s + vec[1] * c, vec[2]])
-
-    def snap_to_grid_position(self, position):
-        """Snap a position to the nearest grid point"""
-        return [
-            round(position[0] / self.grid_step) * self.grid_step,
-            round(position[1] / self.grid_step) * self.grid_step,
-            round(position[2] / self.grid_step) * self.grid_step,
-        ]
 
     def check_collision_at_positions(self, piece_id, test_positions):
         """Check if any of the test positions collide with existing pieces"""
