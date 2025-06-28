@@ -27,6 +27,10 @@ from glview import GLView
 class SomaCube(activity.Activity):
     def __init__(self, handle):
         activity.Activity.__init__(self, handle)
+
+        self.animation_timeout = None
+        self.animation_iter = None
+
         self._create_toolbar()
         self._setup_content()
 
@@ -117,39 +121,7 @@ class SomaCube(activity.Activity):
             "backward": label_back,
         }
 
-        # Add help overlay setup
-        self.help_overlay = Gtk.EventBox()
-        self.help_overlay.set_halign(Gtk.Align.FILL)
-        self.help_overlay.set_valign(Gtk.Align.FILL)
-        
-        # Make the EventBox clickable and connect click event
-        self.help_overlay.connect('button-press-event', self._on_help_clicked)
-        
-        # Create a box to center the help image
-        help_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        help_container.set_halign(Gtk.Align.CENTER)
-        help_container.set_valign(Gtk.Align.CENTER)
-        
-        try:
-            help_image = Gtk.Image.new_from_file('help.gif')
-            help_container.pack_start(help_image, False, False, 0)
-        except Exception as e:
-            print(f"Failed to load help image: {e}")
-            # Fallback to a label
-            label = Gtk.Label("Help image not found")
-            help_container.pack_start(label, False, False, 0)
-        
-        self.help_overlay.add(help_container)
-        
-        # Add semi-transparent background (optional)
-        self.help_overlay.override_background_color(
-            Gtk.StateFlags.NORMAL, 
-            Gdk.RGBA(0, 0, 0, 0.8)  # Black with 80% opacity
-        )
-        
-        overlay.add_overlay(self.help_overlay)
-    
-        
+        # Victory box setup
         self.victory_box = Gtk.VBox(spacing=15)
         self.victory_box.set_halign(Gtk.Align.CENTER)
         self.victory_box.set_valign(Gtk.Align.CENTER)
@@ -165,24 +137,165 @@ class SomaCube(activity.Activity):
 
         overlay.add_overlay(self.victory_box)
 
-        # --- CONNECT THE SIGNAL FROM GLVIEW ---
+        # Help overlay setup
+        self.help_overlay = Gtk.EventBox()
+        self.help_overlay.set_halign(Gtk.Align.FILL)
+        self.help_overlay.set_valign(Gtk.Align.FILL)
+        
+        # Make the EventBox clickable and connect click event
+        self.help_overlay.connect('button-press-event', self._on_help_clicked)
+        
+        # Create a container for help content
+        help_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        help_container.set_halign(Gtk.Align.CENTER)
+        help_container.set_valign(Gtk.Align.CENTER)
+        
+        try:
+            # Get screen dimensions
+            screen = Gdk.Screen.get_default()
+            screen_width = screen.get_width()
+            screen_height = screen.get_height()
+            
+            # Leave some margin (90% of screen size)
+            max_width = int(screen_width * 0.9)
+            max_height = int(screen_height * 0.85)
+            
+            # Load the animated GIF
+            animation = GdkPixbuf.PixbufAnimation.new_from_file('help.gif')
+            
+            # Get original dimensions
+            orig_width = animation.get_width()
+            orig_height = animation.get_height()
+            
+            # Calculate scaling factor to fit screen while maintaining aspect ratio
+            scale_x = max_width / orig_width
+            scale_y = max_height / orig_height
+            scale = min(scale_x, scale_y)
+            
+            # Calculate new dimensions
+            new_width = int(orig_width * scale)
+            new_height = int(orig_height * scale)
+            
+            print(f"Original GIF size: {orig_width}x{orig_height}")
+            print(f"Screen size: {screen_width}x{screen_height}")
+            print(f"Scaled GIF size: {new_width}x{new_height}")
+            
+            # Create image widget
+            self.help_image = Gtk.Image()
+            
+            # Scale the static preview first
+            static_pixbuf = animation.get_static_image()
+            if static_pixbuf:
+                scaled_pixbuf = static_pixbuf.scale_simple(
+                    new_width, new_height, 
+                    GdkPixbuf.InterpType.BILINEAR
+                )
+                self.help_image.set_from_pixbuf(scaled_pixbuf)
+            
+            # Store the animation parameters for scaled playback
+            self.animation = animation
+            self.scaled_width = new_width
+            self.scaled_height = new_height
+            
+            help_container.pack_start(self.help_image, False, False, 0)
+            
+        except Exception as e:
+            print(f"Failed to load help image: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback label
+            label = Gtk.Label("Help image not found")
+            label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, 1))
+            help_container.pack_start(label, False, False, 0)
+        
+        # Add instruction label
+        instruction_label = Gtk.Label()
+        instruction_label.set_markup("<span foreground='white' size='large'>Click anywhere to close</span>")
+        help_container.pack_start(instruction_label, False, False, 0)
+        
+        self.help_overlay.add(help_container)
+        
+        # Add semi-transparent background
+        self.help_overlay.override_background_color(
+            Gtk.StateFlags.NORMAL, 
+            Gdk.RGBA(0, 0, 0, 0.8)
+        )
+        
+        overlay.add_overlay(self.help_overlay)
+        
+        # Connect the signal from glview
         self.gl_view.connect('puzzle-completed', self._on_puzzle_completed)
-
-        self.main_box.pack_start(self.gl_view, True, True, 0)
 
         self.set_canvas(self.main_box)
         self.main_box.show_all()
+        
+        # Initially hide these overlays
         self.victory_box.hide()
         self.help_overlay.hide()
 
-    def _show_help(self, button):
-        """Show help dialog with image"""
-        self.help_overlay.show_all()
-    
+    def _start_scaled_animation(self):
+        """Start the scaled GIF animation"""
+        if hasattr(self, 'animation') and self.animation_timeout is None:
+            from gi.repository import GLib
+            
+            self.animation_iter = self.animation.get_iter(None)
+            self._update_scaled_animation()
+
+    def _stop_animation(self):
+        """Stop the GIF animation"""
+        if self.animation_timeout is not None:
+            from gi.repository import GLib
+            GLib.source_remove(self.animation_timeout)
+            self.animation_timeout = None
+
+    def _update_scaled_animation(self):
+        """Update animation frame with scaling"""
+        if self.animation_iter:
+            # Get current frame
+            pixbuf = self.animation_iter.get_pixbuf()
+            
+            # Scale the frame
+            scaled_pixbuf = pixbuf.scale_simple(
+                self.scaled_width, 
+                self.scaled_height,
+                GdkPixbuf.InterpType.BILINEAR
+            )
+            
+            # Update the image
+            self.help_image.set_from_pixbuf(scaled_pixbuf)
+            
+            # Advance to next frame
+            self.animation_iter.advance(None)
+            
+            # Schedule next frame
+            from gi.repository import GLib
+            delay = self.animation_iter.get_delay_time()
+            if delay > 0:
+                self.animation_timeout = GLib.timeout_add(
+                    delay,
+                    self._update_scaled_animation
+                )
+            else:
+                # Default delay if not specified
+                self.animation_timeout = GLib.timeout_add(
+                    100,
+                    self._update_scaled_animation
+                )
+        
+        return False
+
     def _on_help_clicked(self, widget, event):
         """Hide help overlay when clicked anywhere"""
+        if hasattr(self, '_stop_animation'):
+            self._stop_animation()
         self.help_overlay.hide()
         return True
+    
+    def _show_help(self, button):
+        """Show help overlay"""
+        self.help_overlay.show_all()
+        if hasattr(self, '_start_scaled_animation'):
+            self._start_scaled_animation()
 
     def _on_puzzle_completed(self, gl_view):
         """Handler for the 'puzzle-completed' signal."""
