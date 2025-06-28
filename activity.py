@@ -19,7 +19,7 @@ from sugar3.activity import activity
 from sugar3.graphics.toolbarbox import ToolbarBox
 from sugar3.activity.widgets import ActivityToolbarButton, StopButton
 from sugar3.graphics.toolbutton import ToolButton
-from gi.repository import Gtk, GdkPixbuf
+from gi.repository import Gtk, GdkPixbuf, Gdk
 import os
 from glview import GLView
 
@@ -117,6 +117,39 @@ class SomaCube(activity.Activity):
             "backward": label_back,
         }
 
+        # Add help overlay setup
+        self.help_overlay = Gtk.EventBox()
+        self.help_overlay.set_halign(Gtk.Align.FILL)
+        self.help_overlay.set_valign(Gtk.Align.FILL)
+        
+        # Make the EventBox clickable and connect click event
+        self.help_overlay.connect('button-press-event', self._on_help_clicked)
+        
+        # Create a box to center the help image
+        help_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        help_container.set_halign(Gtk.Align.CENTER)
+        help_container.set_valign(Gtk.Align.CENTER)
+        
+        try:
+            help_image = Gtk.Image.new_from_file('help.gif')
+            help_container.pack_start(help_image, False, False, 0)
+        except Exception as e:
+            print(f"Failed to load help image: {e}")
+            # Fallback to a label
+            label = Gtk.Label("Help image not found")
+            help_container.pack_start(label, False, False, 0)
+        
+        self.help_overlay.add(help_container)
+        
+        # Add semi-transparent background (optional)
+        self.help_overlay.override_background_color(
+            Gtk.StateFlags.NORMAL, 
+            Gdk.RGBA(0, 0, 0, 0.8)  # Black with 80% opacity
+        )
+        
+        overlay.add_overlay(self.help_overlay)
+    
+        
         self.victory_box = Gtk.VBox(spacing=15)
         self.victory_box.set_halign(Gtk.Align.CENTER)
         self.victory_box.set_valign(Gtk.Align.CENTER)
@@ -140,44 +173,16 @@ class SomaCube(activity.Activity):
         self.set_canvas(self.main_box)
         self.main_box.show_all()
         self.victory_box.hide()
+        self.help_overlay.hide()
 
     def _show_help(self, button):
-        """Show the help image (data/help.png) in a dialog."""
-        dialog = Gtk.Dialog(
-            title="Soma Cube Help",
-            parent=self,
-            flags=Gtk.DialogFlags.MODAL,
-            buttons=("_Close", Gtk.ResponseType.CLOSE),
-        )
-        dialog.set_default_size(600, 480)
-
-        image_path = os.path.join(self.get_bundle_path(), "data", "help.png")
-
-        try:
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file(image_path)
-
-            MAX_W, MAX_H = 900, 700
-            if pixbuf.get_width() > MAX_W or pixbuf.get_height() > MAX_H:
-                scale = min(MAX_W / pixbuf.get_width(),
-                             MAX_H / pixbuf.get_height())
-                pixbuf = pixbuf.scale_simple(
-                    int(pixbuf.get_width() * scale),
-                    int(pixbuf.get_height() * scale),
-                    GdkPixbuf.InterpType.BILINEAR)
-
-            image = Gtk.Image.new_from_pixbuf(pixbuf)
-
-        except Exception as e:
-            image = Gtk.Label(label="Could not load help.png :(\n\n%s" % e)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.add_with_viewport(image)
-
-        dialog.get_content_area().pack_start(scrolled, True, True, 0)
-        dialog.show_all()
-        dialog.run()
-        dialog.destroy()
+        """Show help dialog with image"""
+        self.help_overlay.show_all()
+    
+    def _on_help_clicked(self, widget, event):
+        """Hide help overlay when clicked anywhere"""
+        self.help_overlay.hide()
+        return True
 
     def _on_puzzle_completed(self, gl_view):
         """Handler for the 'puzzle-completed' signal."""
