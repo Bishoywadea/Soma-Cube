@@ -19,7 +19,8 @@ from sugar3.activity import activity
 from sugar3.graphics.toolbarbox import ToolbarBox
 from sugar3.activity.widgets import ActivityToolbarButton, StopButton
 from sugar3.graphics.toolbutton import ToolButton
-from gi.repository import Gtk, Pango
+from gi.repository import Gtk, GdkPixbuf
+import os
 from glview import GLView
 
 
@@ -141,74 +142,39 @@ class SomaCube(activity.Activity):
         self.victory_box.hide()
 
     def _show_help(self, button):
-        """Show help dialog"""
+        """Show the help image (data/help.png) in a dialog."""
         dialog = Gtk.Dialog(
             title="Soma Cube Help",
             parent=self,
             flags=Gtk.DialogFlags.MODAL,
             buttons=("_Close", Gtk.ResponseType.CLOSE),
         )
+        dialog.set_default_size(600, 480)
 
-        # Set dialog size
-        dialog.set_default_size(400, 300)
+        image_path = os.path.join(self.get_bundle_path(), "data", "help.png")
 
-        # Create text view for help content
-        textview = Gtk.TextView()
-        textview.set_editable(False)
-        textview.set_cursor_visible(False)
-        textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file(image_path)
 
-        # Set font
-        font_desc = Pango.FontDescription("Sans 12")
-        textview.modify_font(font_desc)
+            MAX_W, MAX_H = 900, 700
+            if pixbuf.get_width() > MAX_W or pixbuf.get_height() > MAX_H:
+                scale = min(MAX_W / pixbuf.get_width(),
+                             MAX_H / pixbuf.get_height())
+                pixbuf = pixbuf.scale_simple(
+                    int(pixbuf.get_width() * scale),
+                    int(pixbuf.get_height() * scale),
+                    GdkPixbuf.InterpType.BILINEAR)
 
-        # Add help text
-        help_text = """
-            The Goal of the Game
-            ---------------------------------
-            The goal is to assemble all 7 colored pieces into a perfect 3x3x3 cube. Use the transparent 'shadow' cube in the center of the scene as your guide.
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
 
-            When all 27 blocks of the pieces fill the 27 shadow slots perfectly, you've solved the puzzle!
+        except Exception as e:
+            image = Gtk.Label(label="Could not load help.png :(\n\n%s" % e)
 
-
-            Camera Controls (How to Look Around)
-            ---------------------------------
-            •  Rotate the View: Click and drag the background with the left mouse button.
-
-            •  Move Around (Fly): Use the W, A, S, and D keys.
-
-            •  Move Up / Down: Use the Spacebar (to go up) and the Left Shift key (to go down).
-
-            •  Zoom In / Out: Use the mouse scroll wheel.
-
-            •  Reset View: Press the R key or use the 'Refresh' button in the toolbar to return the camera to its starting position.
-
-
-            Piece Controls (How to Play)
-            ---------------------------------
-            1.  Select a Piece: Click on any colored piece to select it. The selected piece will be highlighted, and movement arrows will appear around it.
-
-            2.  Move the Piece: Use the U, I, O, J, K, L keys to move the selected piece.
-                - The 'Piece Controls' guide in the top-left corner shows which key moves the piece Up, Down, Left, Right, Forward, or Backward from your current camera angle.
-
-            3.  Rotate the Piece: Use the number keys to rotate the selected piece around its center.
-                - 1 - Rotate around the X-axis (Red Arrow direction)
-                - 2 - Rotate around the Y-axis (Green Arrow direction)
-                - 3 - Rotate around the Z-axis (Blue Arrow direction)
-
-            Have fun solving the puzzle!
-            """
-
-        buffer = textview.get_buffer()
-        buffer.set_text(help_text)
-
-        # Add to dialog
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.add(textview)
-        dialog.get_content_area().pack_start(scrolled, True, True, 0)
+        scrolled.add_with_viewport(image)
 
-        # Show dialog
+        dialog.get_content_area().pack_start(scrolled, True, True, 0)
         dialog.show_all()
         dialog.run()
         dialog.destroy()
