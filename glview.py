@@ -1,13 +1,14 @@
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib, GObject
-from OpenGL.GL import *
-from OpenGL.GL.shaders import compileProgram, compileShader
-import numpy as np
+import ctypes
 import math
 import random
-import ctypes
+
+import numpy as np
+from gi.repository import Gdk, GLib, GObject, Gtk
+from OpenGL.GL import *
+from OpenGL.GL.shaders import compileProgram, compileShader
 from PIL import Image
 
 # Vertex shader with support for per-vertex colors
@@ -262,25 +263,119 @@ class GLView(Gtk.GLArea):
 
     def setup_skybox(self):
         """Create a VAO for the skybox cube."""
-        skybox_vertices = np.array([
-            -1.0,  1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0, -1.0,
-             1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0, -1.0,
-
-            -1.0, -1.0,  1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,
-            -1.0,  1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0,
-
-             1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0,
-             1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,
-
-            -1.0, -1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0,  1.0,
-             1.0,  1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,  1.0,
-
-            -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,
-             1.0,  1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0,
-
-            -1.0, -1.0, -1.0, -1.0, -1.0,  1.0,  1.0, -1.0, -1.0,
-             1.0, -1.0, -1.0, -1.0, -1.0,  1.0,  1.0, -1.0,  1.0
-        ], dtype=np.float32)
+        skybox_vertices = np.array(
+            [
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
+            ],
+            dtype=np.float32,
+        )
 
         self.skybox_vao = glGenVertexArrays(1)
         glBindVertexArray(self.skybox_vao)
@@ -342,16 +437,42 @@ class GLView(Gtk.GLArea):
         size = 50.0  # How large the floor is
         texture_repeats = 50.0  # How many times the texture repeats across the floor
 
-        vertices = np.array([
-            # positions      # texture coords
-            -size, y_level,  size,  0.0, texture_repeats,
-             size, y_level,  size,  texture_repeats, texture_repeats,
-             size, y_level, -size,  texture_repeats, 0.0,
-
-            -size, y_level,  size,  0.0, texture_repeats,
-             size, y_level, -size,  texture_repeats, 0.0,
-            -size, y_level, -size,  0.0, 0.0
-        ], dtype=np.float32)
+        vertices = np.array(
+            [
+                # positions      # texture coords
+                -size,
+                y_level,
+                size,
+                0.0,
+                texture_repeats,
+                size,
+                y_level,
+                size,
+                texture_repeats,
+                texture_repeats,
+                size,
+                y_level,
+                -size,
+                texture_repeats,
+                0.0,
+                -size,
+                y_level,
+                size,
+                0.0,
+                texture_repeats,
+                size,
+                y_level,
+                -size,
+                texture_repeats,
+                0.0,
+                -size,
+                y_level,
+                -size,
+                0.0,
+                0.0,
+            ],
+            dtype=np.float32,
+        )
 
         self.floor_vao = glGenVertexArrays(1)
         glBindVertexArray(self.floor_vao)
@@ -388,10 +509,7 @@ class GLView(Gtk.GLArea):
         # Define cube faces with colors
         faces = [
             # Front (z=0.5) - slightly different shades for each face
-            ([-0.5, -0.5, 0.5],
-             [0.5, -0.5, 0.5],
-             [0.5, 0.5, 0.5],
-             [-0.5, 0.5, 0.5]),
+            ([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]),
             # Back (z=-0.5)
             (
                 [0.5, -0.5, -0.5],
@@ -400,10 +518,7 @@ class GLView(Gtk.GLArea):
                 [0.5, 0.5, -0.5],
             ),
             # Top (y=0.5)
-            ([-0.5, 0.5, 0.5],
-             [0.5, 0.5, 0.5],
-             [0.5, 0.5, -0.5],
-             [-0.5, 0.5, -0.5]),
+            ([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]),
             # Bottom (y=-0.5)
             (
                 [-0.5, -0.5, -0.5],
@@ -412,10 +527,7 @@ class GLView(Gtk.GLArea):
                 [-0.5, -0.5, 0.5],
             ),
             # Right (x=0.5)
-            ([0.5, -0.5, 0.5],
-             [0.5, -0.5, -0.5],
-             [0.5, 0.5, -0.5],
-             [0.5, 0.5, 0.5]),
+            ([0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]),
             # Left (x=-0.5)
             (
                 [-0.5, -0.5, -0.5],
