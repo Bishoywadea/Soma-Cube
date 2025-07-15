@@ -214,11 +214,15 @@ class SomaCube(activity.Activity):
     def _setup_video_player(self, max_width, max_height):
         """Setup GStreamer video player"""
         # Create the pipeline
-        video_path = os.path.abspath('m2.mp4')
-        
-        # Create pipeline with autovideosink for better compatibility
+        Gst.init(None)
         self.player = Gst.ElementFactory.make("playbin", "player")
-        self.player.set_property("uri", f"file://{video_path}")
+        if self.player is None:
+            raise RuntimeError("Could not create 'playbin'—check installation and plugins")
+        file_uri = Gst.filename_to_uri(os.path.abspath("help.mp4"))
+        # Convert to proper URI
+
+        self.player = Gst.ElementFactory.make("playbin", "player")
+        self.player.set_property("uri", file_uri)
         
         # Create video sink
         videosink = Gst.ElementFactory.make("gtksink", "videosink")
