@@ -1058,22 +1058,22 @@ class GLView(Gtk.GLArea):
             moved = False
 
             # Discrete movement with UIOJKL
-            if event.keyval == Gdk.KEY_u or event.keyval == Gdk.KEY_U:  # Up
+            if event.keyval == Gdk.KEY_Up:  # Up
                 self.move_object_discrete(self.selected_object, [0, 1, 0])
                 moved = True
-            elif event.keyval == Gdk.KEY_o or event.keyval == Gdk.KEY_O:  # Down
+            elif event.keyval == Gdk.KEY_Down:  # Down
                 self.move_object_discrete(self.selected_object, [0, -1, 0])
                 moved = True
-            elif event.keyval == Gdk.KEY_j or event.keyval == Gdk.KEY_J:  # Left
+            elif event.keyval == Gdk.KEY_Left:  # Left
                 self.move_object_discrete(self.selected_object, [-1, 0, 0])
                 moved = True
-            elif event.keyval == Gdk.KEY_l or event.keyval == Gdk.KEY_L:  # Right
+            elif event.keyval == Gdk.KEY_Right:  # Right
                 self.move_object_discrete(self.selected_object, [1, 0, 0])
                 moved = True
-            elif event.keyval == Gdk.KEY_i or event.keyval == Gdk.KEY_I:  # Forward
+            elif event.keyval == Gdk.KEY_p or event.keyval == Gdk.KEY_P:  # Forward
                 self.move_object_discrete(self.selected_object, [0, 0, -1])
                 moved = True
-            elif event.keyval == Gdk.KEY_k or event.keyval == Gdk.KEY_K:  # Backward
+            elif event.keyval == Gdk.KEY_o or event.keyval == Gdk.KEY_O:  # Backward
                 self.move_object_discrete(self.selected_object, [0, 0, 1])
                 moved = True
 
@@ -1413,12 +1413,12 @@ class GLView(Gtk.GLArea):
 
         # Define the world axes and their corresponding movement keys
         key_map = {
-            "x": "L",
-            "-x": "J",
-            "y": "U",
-            "-y": "O",
-            "z": "K",
-            "-z": "I",  # Note: Z is often "into the screen"
+            "x": "→ Arrow",
+            "-x": "← Arrow",
+            "y": "↑ Arrow",
+            "-y": "↓ Arrow",
+            "z": "O",
+            "-z": "P",  # Note: Z is often "into the screen"
         }
         world_axes = {
             "x": np.array([1, 0, 0]),
