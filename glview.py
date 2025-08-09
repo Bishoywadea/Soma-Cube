@@ -1,3 +1,20 @@
+# This file is part of the Soma Cube game.
+# Copyright (C) 2025 Bishoy Wadea
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -70,12 +87,12 @@ void main()
 {
     // Pass the vertex position as the texture coordinate for the cubemap
     TexCoords = aPos;
-    
+
     // Remove the translation part of the view matrix so the skybox
     // follows the camera's rotation but not its position.
     mat4 view_no_translation = mat4(mat3(view));
     vec4 pos = projection * view_no_translation * vec4(aPos, 1.0);
-    
+
     // Set the z-component to w, ensuring it's always at the maximum depth (1.0)
     // This makes the skybox appear behind everything else.
     gl_Position = pos.xyww;
@@ -91,7 +108,7 @@ in vec3 TexCoords;
 uniform samplerCube skybox;
 
 void main()
-{    
+{
     FragColor = texture(skybox, TexCoords);
 }
 """
@@ -105,6 +122,7 @@ class GLView(Gtk.GLArea):
         self.set_required_version(3, 3)
         self.set_has_depth_buffer(True)
         self.connect("realize", self.on_realize)
+        self.connect("realize", self.start_mouse_animation)
         self.connect("render", self.on_render)
 
         # Camera control
@@ -160,6 +178,61 @@ class GLView(Gtk.GLArea):
 
         self.grid_step = 0.6
 
+    def start_mouse_animation(self, widget):
+        """Fast smooth mouse animation: sweep across all X, Y fixed at 20, then click center"""
+
+        def animate_step():
+            if not hasattr(self, "animation_x"):
+                # Start at 0
+                self.animation_x = 0
+                self.animation_y = 20  # fixed Y
+
+                # Get screen width
+                screen = self.get_screen()
+                self.target_x = screen.get_width()
+
+                # Get pointer device
+                display = self.get_display()
+                device_manager = display.get_device_manager()
+                self.pointer = device_manager.get_client_pointer()
+
+            if self.animation_x <= self.target_x:
+                try:
+                    self.pointer.warp(
+                        self.get_screen(), self.animation_x, self.animation_y
+                    )
+                except BaseException:
+                    print(
+                        f"Could not warp pointer to {self.animation_x}, {self.animation_y}"
+                    )
+                self.animation_x += 10  # move 10 pixels per frame
+                return True  # Continue
+            else:
+                # Animation finished → click in the middle
+                self.click_center()
+                del self.animation_x
+                return False  # Stop
+
+        GLib.timeout_add(1, animate_step)
+
+    def click_center(self):
+        """Simulate a click in the center by calling the handler directly."""
+        alloc = self.get_allocation()
+        center_x = alloc.width // 2
+        center_y = alloc.height // 2
+
+        # Create a mock event object with the necessary properties
+        class MockEvent:
+            def __init__(self, x, y, button=1):
+                self.x = x
+                self.y = y
+                self.button = button
+
+        # Call your mouse press handler directly
+        mock_event = MockEvent(center_x, center_y)
+        self.on_mouse_press(self, mock_event)
+        self.on_mouse_release(self, mock_event)
+
     def on_realize(self, area):
         self.make_current()
 
@@ -213,7 +286,8 @@ class GLView(Gtk.GLArea):
             print(f"Cubemap cross file not found: {filename}")
             return None
 
-        # Validate that the image has the correct 4x3 aspect ratio for a cross layout
+        # Validate that the image has the correct 4x3 aspect ratio for a cross
+        # layout
         face_width = image.width // 4
         face_height = image.height // 3
         if face_width != face_height or image.width % 4 != 0 or image.height % 3 != 0:
@@ -228,14 +302,21 @@ class GLView(Gtk.GLArea):
         # Define the crop boxes and target for each face from the large image
         # Box is (left, upper, right, lower)
         # Note: Some faces might need rotation depending on the source. This layout
-        # often works, but if a face is sideways, you may need to add a .transpose() call.
+        # often works, but if a face is sideways, you may need to add a
+        # .transpose() call.
         face_map = {
-            GL_TEXTURE_CUBE_MAP_POSITIVE_X: (2 * w, 1 * h, 3 * w, 2 * h),  # Right
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0 * w, 1 * h, 1 * w, 2 * h),  # Left
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (1 * w, 0 * h, 2 * w, 1 * h),  # Top
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (1 * w, 2 * h, 2 * w, 3 * h),  # Bottom
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (1 * w, 1 * h, 2 * w, 2 * h),  # Front
-            GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (3 * w, 1 * h, 4 * w, 2 * h),  # Back
+            # Right
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X: (2 * w, 1 * h, 3 * w, 2 * h),
+            # Left
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_X: (0 * w, 1 * h, 1 * w, 2 * h),
+            # Top
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Y: (1 * w, 0 * h, 2 * w, 1 * h),
+            # Bottom
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: (1 * w, 2 * h, 2 * w, 3 * h),
+            # Front
+            GL_TEXTURE_CUBE_MAP_POSITIVE_Z: (1 * w, 1 * h, 2 * w, 2 * h),
+            # Back
+            GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: (3 * w, 1 * h, 4 * w, 2 * h),
         }
 
         texture_id = glGenTextures(1)
@@ -250,13 +331,31 @@ class GLView(Gtk.GLArea):
             #     face_image = face_image.transpose(Image.ROTATE_180)
 
             img_data = face_image.convert("RGB").tobytes()
-            glTexImage2D(target, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            glTexImage2D(
+                target,
+                0,
+                GL_RGB,
+                w,
+                h,
+                0,
+                GL_RGB,
+                GL_UNSIGNED_BYTE,
+                img_data)
 
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
+        glTexParameteri(
+            GL_TEXTURE_CUBE_MAP,
+            GL_TEXTURE_WRAP_S,
+            GL_CLAMP_TO_EDGE)
+        glTexParameteri(
+            GL_TEXTURE_CUBE_MAP,
+            GL_TEXTURE_WRAP_T,
+            GL_CLAMP_TO_EDGE)
+        glTexParameteri(
+            GL_TEXTURE_CUBE_MAP,
+            GL_TEXTURE_WRAP_R,
+            GL_CLAMP_TO_EDGE)
 
         glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
         return texture_id
@@ -401,7 +500,10 @@ class GLView(Gtk.GLArea):
         # Set texture wrapping and filtering options
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(
+            GL_TEXTURE_2D,
+            GL_TEXTURE_MIN_FILTER,
+            GL_LINEAR_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
         # Load image with Pillow
@@ -479,7 +581,11 @@ class GLView(Gtk.GLArea):
 
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes,
+            vertices,
+            GL_STATIC_DRAW)
 
         # Position attribute
         glVertexAttribPointer(
@@ -509,7 +615,8 @@ class GLView(Gtk.GLArea):
         # Define cube faces with colors
         faces = [
             # Front (z=0.5) - slightly different shades for each face
-            ([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]),
+            ([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5],
+             [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]),
             # Back (z=-0.5)
             (
                 [0.5, -0.5, -0.5],
@@ -518,7 +625,8 @@ class GLView(Gtk.GLArea):
                 [0.5, 0.5, -0.5],
             ),
             # Top (y=0.5)
-            ([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]),
+            ([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
+             [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]),
             # Bottom (y=-0.5)
             (
                 [-0.5, -0.5, -0.5],
@@ -527,7 +635,8 @@ class GLView(Gtk.GLArea):
                 [-0.5, -0.5, 0.5],
             ),
             # Right (x=0.5)
-            ([0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]),
+            ([0.5, -0.5, 0.5], [0.5, -0.5, -0.5],
+             [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]),
             # Left (x=-0.5)
             (
                 [-0.5, -0.5, -0.5],
@@ -548,7 +657,8 @@ class GLView(Gtk.GLArea):
 
             # Two triangles per face
             base = vertex_count
-            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
+            indices.extend([base, base + 1, base + 2,
+                           base, base + 2, base + 3])
             vertex_count += 4
 
         vertices = np.array(vertices, dtype=np.float32)
@@ -572,7 +682,11 @@ class GLView(Gtk.GLArea):
             GL_STATIC_DRAW,
         )
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
-        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes,
+            colors.nbytes,
+            colors)
         glBufferSubData(
             GL_ARRAY_BUFFER,
             vertices.nbytes + colors.nbytes,
@@ -583,7 +697,11 @@ class GLView(Gtk.GLArea):
         # Index buffer
         ebo = glGenBuffers(1)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
+        glBufferData(
+            GL_ELEMENT_ARRAY_BUFFER,
+            indices.nbytes,
+            indices,
+            GL_STATIC_DRAW)
 
         # Vertex Attribute
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
@@ -649,7 +767,11 @@ class GLView(Gtk.GLArea):
             GL_ARRAY_BUFFER, vertices.nbytes + colors.nbytes, None, GL_STATIC_DRAW
         )
         glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
-        glBufferSubData(GL_ARRAY_BUFFER, vertices.nbytes, colors.nbytes, colors)
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            vertices.nbytes,
+            colors.nbytes,
+            colors)
 
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, None)
         glEnableVertexAttribArray(0)
@@ -785,7 +907,8 @@ class GLView(Gtk.GLArea):
         # --- 1. Draw the main scene objects ---
         glUseProgram(self.shader)
         glUniformMatrix4fv(
-            glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, view.T.flatten()
+            glGetUniformLocation(
+                self.shader, "view"), 1, GL_FALSE, view.T.flatten()
         )
         glUniformMatrix4fv(
             glGetUniformLocation(self.shader, "projection"),
@@ -814,7 +937,8 @@ class GLView(Gtk.GLArea):
 
             glUseProgram(self.skybox_shader)
 
-            # This is a clean way to remove the translation from the view matrix
+            # This is a clean way to remove the translation from the view
+            # matrix
             view_no_translation = np.array(view)
             view_no_translation[3, :3] = 0.0
 
@@ -870,7 +994,11 @@ class GLView(Gtk.GLArea):
         """Draw a cube, using a texture if available, otherwise a solid color."""
         # Create model matrix
         model = np.eye(4, dtype=np.float32)
-        model = self.translate(model, obj["pos"][0], obj["pos"][1], obj["pos"][2])
+        model = self.translate(
+            model,
+            obj["pos"][0],
+            obj["pos"][1],
+            obj["pos"][2])
         model = self.scale_matrix(
             model, obj["scale"][0], obj["scale"][1], obj["scale"][2]
         )
@@ -916,7 +1044,13 @@ class GLView(Gtk.GLArea):
         # Draw wireframe outline (always black)
         glUniform1f(glGetUniformLocation(self.shader, "useTexture"), 0.0)
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-        glUniform3f(glGetUniformLocation(self.shader, "objectColor"), 0.0, 0.0, 0.0)
+        glUniform3f(
+            glGetUniformLocation(
+                self.shader,
+                "objectColor"),
+            0.0,
+            0.0,
+            0.0)
         glLineWidth(
             2.0
             if self.selected_object
@@ -1216,7 +1350,8 @@ class GLView(Gtk.GLArea):
     def check_bounds(self, positions):
         """Check if positions are within reasonable bounds"""
         for pos in positions:
-            if abs(pos[0]) > 20 or pos[1] < 0 or pos[1] > 10 or abs(pos[2]) > 15:
+            if abs(pos[0]) > 20 or pos[1] < 0 or pos[1] > 10 or abs(
+                    pos[2]) > 15:
                 return False
         return True
 
@@ -1241,7 +1376,8 @@ class GLView(Gtk.GLArea):
         alpha_loc = glGetUniformLocation(self.shader, "alpha")
         glUniform1f(alpha_loc, color[3] if len(color) > 3 else 1.0)
 
-        use_vertex_color_loc = glGetUniformLocation(self.shader, "useVertexColor")
+        use_vertex_color_loc = glGetUniformLocation(
+            self.shader, "useVertexColor")
         glUniform1f(use_vertex_color_loc, 0.0)
 
         # Draw solid cube (no wireframe for shadows)
@@ -1325,7 +1461,8 @@ class GLView(Gtk.GLArea):
                 piece_id = obj["piece_id"]
 
                 # Get all cubes of this piece
-                piece_cubes = [o for o in self.objects if o.get("piece_id") == piece_id]
+                piece_cubes = [
+                    o for o in self.objects if o.get("piece_id") == piece_id]
 
                 # Calculate piece center (rounded to grid)
                 positions = [np.array(cube["pos"]) for cube in piece_cubes]
@@ -1352,7 +1489,8 @@ class GLView(Gtk.GLArea):
                     test_positions.append(new_pos)
 
                 # Check if rotation is valid (no collisions)
-                if not self.check_collision_at_positions(piece_id, test_positions):
+                if not self.check_collision_at_positions(
+                        piece_id, test_positions):
                     # Apply the rotation
                     for i, cube in enumerate(piece_cubes):
                         cube["pos"] = test_positions[i]
@@ -1368,21 +1506,24 @@ class GLView(Gtk.GLArea):
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([vec[0], vec[1] * c - vec[2] * s, vec[1] * s + vec[2] * c])
+        return np.array([vec[0], vec[1] * c - vec[2]
+                        * s, vec[1] * s + vec[2] * c])
 
     def rotate_vector_y(self, vec, angle):
         """Rotate a 3D vector around Y axis"""
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([vec[0] * c + vec[2] * s, vec[1], -vec[0] * s + vec[2] * c])
+        return np.array(
+            [vec[0] * c + vec[2] * s, vec[1], -vec[0] * s + vec[2] * c])
 
     def rotate_vector_z(self, vec, angle):
         """Rotate a 3D vector around Z axis"""
         rad = math.radians(angle)
         c = math.cos(rad)
         s = math.sin(rad)
-        return np.array([vec[0] * c - vec[1] * s, vec[0] * s + vec[1] * c, vec[2]])
+        return np.array([vec[0] * c - vec[1] * s, vec[0]
+                        * s + vec[1] * c, vec[2]])
 
     def check_collision_at_positions(self, piece_id, test_positions):
         """Check if any of the test positions collide with existing pieces"""
@@ -1457,11 +1598,16 @@ class GLView(Gtk.GLArea):
         back_axis = get_best_axis(-cam_forward)
 
         # Update the HUD labels
-        self.hud_labels["right"].set_markup(f"<b>Right:</b>    ({key_map[right_axis]})")
-        self.hud_labels["left"].set_markup(f"<b>Left:</b>     ({key_map[left_axis]})")
-        self.hud_labels["up"].set_markup(f"<b>Up:</b>       ({key_map[up_axis]})")
-        self.hud_labels["down"].set_markup(f"<b>Down:</b>     ({key_map[down_axis]})")
-        self.hud_labels["forward"].set_markup(f"<b>Forward:</b>  ({key_map[fwd_axis]})")
+        self.hud_labels["right"].set_markup(
+            f"<b>Right:</b>    ({key_map[right_axis]})")
+        self.hud_labels["left"].set_markup(
+            f"<b>Left:</b>     ({key_map[left_axis]})")
+        self.hud_labels["up"].set_markup(
+            f"<b>Up:</b>       ({key_map[up_axis]})")
+        self.hud_labels["down"].set_markup(
+            f"<b>Down:</b>     ({key_map[down_axis]})")
+        self.hud_labels["forward"].set_markup(
+            f"<b>Forward:</b>  ({key_map[fwd_axis]})")
         self.hud_labels["backward"].set_markup(
             f"<b>Backward:</b> ({key_map[back_axis]})"
         )
@@ -1494,7 +1640,8 @@ class CubeWindow(Gtk.Window):
         info_box.pack_start(title_label, False, False, 10)
 
         info_box.pack_start(
-            Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10
+            Gtk.Separator(
+                orientation=Gtk.Orientation.VERTICAL), False, False, 10
         )
 
         controls_label = Gtk.Label()
@@ -1506,7 +1653,8 @@ class CubeWindow(Gtk.Window):
 
         main_box.pack_start(info_box, False, False, 0)
         main_box.pack_start(
-            Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0
+            Gtk.Separator(
+                orientation=Gtk.Orientation.HORIZONTAL), False, False, 0
         )
 
         # --- Overlay and GLView setup ---

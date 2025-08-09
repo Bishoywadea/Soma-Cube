@@ -14,19 +14,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-import os
 
-import gi
-gi.require_version('Gst', '1.0')
-gi.require_version('GstVideo', '1.0')
+from gettext import gettext as _
 
 from sugar3.activity import activity
 from sugar3.graphics.toolbarbox import ToolbarBox
 from sugar3.activity.widgets import ActivityToolbarButton, StopButton
 from sugar3.graphics.toolbutton import ToolButton
+from sugar3.graphics.palette import Palette
+from sugar3.graphics import style
 
-from gi.repository import Gtk, Gdk
-from gi.repository import Gst
+from gi.repository import Gtk, Gdk, GLib
 
 from glview import GLView
 
@@ -34,12 +32,6 @@ from glview import GLView
 class SomaCube(activity.Activity):
     def __init__(self, handle):
         activity.Activity.__init__(self, handle)
-
-        # Initialize GStreamer
-        Gst.init(None)
-        
-        self.player = None
-        self.video_widget = None
 
         self._create_toolbar()
         self._setup_content()
@@ -57,16 +49,18 @@ class SomaCube(activity.Activity):
         toolbar_box.toolbar.insert(separator, -1)
 
         # Reset button
-        reset_button = ToolButton("emblem-busy")
-        reset_button.set_tooltip("Reset")
-        reset_button.connect("clicked", self._on_play_again_clicked)
-        toolbar_box.toolbar.insert(reset_button, -1)
+        self.reset_button = ToolButton("emblem-busy")
+        self.reset_button.set_tooltip("Reset")
+        self.reset_button.connect("clicked", self._on_play_again_clicked)
+        toolbar_box.toolbar.insert(self.reset_button, -1)
+        self.reset_button.show()
 
         # Help button
-        help_button = ToolButton("toolbar-help")
-        help_button.set_tooltip("Help")
-        help_button.connect("clicked", self._show_help)
-        toolbar_box.toolbar.insert(help_button, -1)
+        self.help_button = ToolButton("toolbar-help")
+        self.help_button.set_tooltip("Help")
+        self._setup_help_palette()
+        toolbar_box.toolbar.insert(self.help_button, -1)
+        self.help_button.show()
 
         # Separator
         separator = Gtk.SeparatorToolItem()
@@ -77,9 +71,97 @@ class SomaCube(activity.Activity):
         # Stop button
         stop_button = StopButton(self)
         toolbar_box.toolbar.insert(stop_button, -1)
+        stop_button.show()
 
         self.set_toolbar_box(toolbar_box)
         toolbar_box.show_all()
+
+    def _setup_help_palette(self):
+        """Create a Sugar-style help palette"""
+        palette = Palette('Help')
+        palette.props.primary_text = 'Soma Cube Game Help'
+        palette.props.secondary_text = 'Learn how to play the Soma Cube puzzle game'
+
+        # Create help content container
+        help_content = Gtk.VBox(spacing=style.DEFAULT_SPACING)
+        help_content.set_border_width(style.DEFAULT_SPACING)
+
+        # Game description
+        desc_label = Gtk.Label()
+        desc_label.set_markup('<b>About Soma Cube:</b>')
+        desc_label.set_alignment(0, 0.5)
+        help_content.pack_start(desc_label, False, False, 0)
+
+        desc_text = Gtk.Label()
+        desc_text.set_text('The Soma cube is a 3D puzzle where you must arrange\n'
+                           '7 different pieces to form a 3×3×3 cube.')
+        desc_text.set_alignment(0, 0.5)
+        desc_text.set_line_wrap(True)
+        desc_text.set_max_width_chars(style.MENU_WIDTH_CHARS)
+        help_content.pack_start(desc_text, False, False, 0)
+
+        # Controls section
+        controls_label = Gtk.Label()
+        controls_label.set_markup('<b>Controls:</b>')
+        controls_label.set_alignment(0, 0.5)
+        help_content.pack_start(
+            controls_label,
+            False,
+            False,
+            style.DEFAULT_SPACING)
+
+        # Create controls grid
+        controls_grid = Gtk.Grid()
+        controls_grid.set_column_spacing(style.DEFAULT_SPACING)
+        controls_grid.set_row_spacing(2)
+
+        controls = [
+            ('Mouse:', 'Select and direct camera'),
+            ('Arrow Keys:', 'Move selected piece'),
+            ('W:', 'move camera forward'),
+            ('S:', 'move camera backward'),
+            ('A:', 'move camera left'),
+            ('D:', 'move camera right'),
+            ('Shift:', 'move camera down'),
+            ('Space:', 'move camera up'),
+        ]
+
+        for i, (key, action) in enumerate(controls):
+            key_label = Gtk.Label()
+            key_label.set_text(key)
+            key_label.set_alignment(0, 0.5)
+            key_label.set_markup(f'<tt>{key}</tt>')
+
+            action_label = Gtk.Label()
+            action_label.set_text(action)
+            action_label.set_alignment(0, 0.5)
+
+            controls_grid.attach(key_label, 0, i, 1, 1)
+            controls_grid.attach(action_label, 1, i, 1, 1)
+
+        help_content.pack_start(controls_grid, False, False, 0)
+
+        # Goal section
+        goal_label = Gtk.Label()
+        goal_label.set_markup('<b>Goal:</b>')
+        goal_label.set_alignment(0, 0.5)
+        help_content.pack_start(
+            goal_label, False, False, style.DEFAULT_SPACING)
+
+        goal_text = Gtk.Label()
+        goal_text.set_text('Arrange all 7 pieces to completely fill the 3×3×3 cube.\n'
+                           'No pieces should overlap or extend outside the cube.')
+        goal_text.set_alignment(0, 0.5)
+        goal_text.set_line_wrap(True)
+        goal_text.set_max_width_chars(style.MENU_WIDTH_CHARS)
+        help_content.pack_start(goal_text, False, False, 0)
+
+        # Add content to palette
+        palette.set_content(help_content)
+        help_content.show_all()
+
+        # Set palette on the help button
+        self.help_button.set_palette(palette)
 
     def _setup_content(self):
         # Create main container
@@ -91,6 +173,8 @@ class SomaCube(activity.Activity):
 
         # Create our OpenGL view
         self.gl_view = GLView()
+        self.gl_view.set_can_focus(True)
+        self.gl_view.grab_focus()
         overlay.add(self.gl_view)
 
         # Create a Grid to hold the HUD labels
@@ -102,6 +186,7 @@ class SomaCube(activity.Activity):
         controls_hud.set_margin_top(10)
         controls_hud.set_margin_start(10)
 
+        controls_hud.set_can_focus(False)
         overlay.add_overlay(controls_hud)
         overlay.set_overlay_pass_through(controls_hud, True)
 
@@ -137,7 +222,8 @@ class SomaCube(activity.Activity):
         self.victory_box.set_valign(Gtk.Align.CENTER)
 
         victory_label = Gtk.Label()
-        victory_label.set_markup("<span size='xx-large' weight='bold'>Puzzle Complete!</span>")
+        victory_label.set_markup(
+            "<span size='xx-large' weight='bold'>Puzzle Complete!</span>")
 
         play_again_button = Gtk.Button(label="Play Again")
         play_again_button.connect('clicked', self._on_play_again_clicked)
@@ -147,137 +233,13 @@ class SomaCube(activity.Activity):
 
         overlay.add_overlay(self.victory_box)
 
-        # Help overlay setup
-        self.help_overlay = Gtk.EventBox()
-        self.help_overlay.set_halign(Gtk.Align.FILL)
-        self.help_overlay.set_valign(Gtk.Align.FILL)
-        
-        # Make the EventBox clickable and connect click event
-        self.help_overlay.connect('button-press-event', self._on_help_clicked)
-        
-        # Create a container for help content
-        help_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        help_container.set_halign(Gtk.Align.CENTER)
-        help_container.set_valign(Gtk.Align.CENTER)
-        
-        try:
-            # Get screen dimensions
-            screen = Gdk.Screen.get_default()
-            screen_width = screen.get_width()
-            screen_height = screen.get_height()
-            
-            # Leave some margin (90% of screen size)
-            max_width = int(screen_width * 0.9)
-            max_height = int(screen_height * 0.85)
-            
-            # Create a placeholder box for video
-            self.video_container = Gtk.Box()
-            self.video_container.set_size_request(max_width, max_height)
-            help_container.pack_start(self.video_container, False, False, 0)
-
-            # Initialize video player
-            self._setup_video_player(max_width, max_height)
-                        
-            help_container.pack_start(self.video_widget, False, False, 0)
-            
-        except Exception as e:
-            print(f"Failed to setup video player: {e}")
-            import traceback
-            traceback.print_exc()
-            # Fallback label
-            label = Gtk.Label("Help video not found")
-            label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, 1))
-            help_container.pack_start(label, False, False, 0)
-        
-        # Add instruction label
-        instruction_label = Gtk.Label()
-        instruction_label.set_markup("<span foreground='white' size='large'>Click anywhere to close</span>")
-        help_container.pack_start(instruction_label, False, False, 0)
-        
-        self.help_overlay.add(help_container)
-        
-        # Add semi-transparent background
-        self.help_overlay.override_background_color(
-            Gtk.StateFlags.NORMAL, 
-            Gdk.RGBA(0, 0, 0, 0.8)
-        )
-        
-        overlay.add_overlay(self.help_overlay)
-        
         # Connect the signal from glview
         self.gl_view.connect('puzzle-completed', self._on_puzzle_completed)
 
         self.set_canvas(self.main_box)
         self.main_box.show_all()
-        
-        # Initially hide these overlays
+
         self.victory_box.hide()
-        self.help_overlay.hide()
-
-    def _setup_video_player(self, max_width, max_height):
-        """Setup GStreamer video player"""
-        # Create the pipeline
-        Gst.init(None)
-        self.player = Gst.ElementFactory.make("playbin", "player")
-        if self.player is None:
-            raise RuntimeError("Could not create 'playbin'—check installation and plugins")
-        file_uri = Gst.filename_to_uri(os.path.abspath("help.mp4"))
-        # Convert to proper URI
-
-        self.player = Gst.ElementFactory.make("playbin", "player")
-        self.player.set_property("uri", file_uri)
-        
-        # Create video sink
-        videosink = Gst.ElementFactory.make("gtksink", "videosink")
-        self.player.set_property("video-sink", videosink)
-        
-        # Get the widget from gtksink
-        self.video_widget = videosink.get_property('widget')
-        self.video_widget.set_size_request(max_width, max_height)
-        
-        # Add the video widget to the container
-        self.video_container.pack_start(self.video_widget, True, True, 0)
-        self.video_widget.show()
-        
-        # Connect bus to handle messages
-        bus = self.player.get_bus()
-        bus.add_signal_watch()
-        bus.connect('message::eos', self._on_eos)
-        bus.connect('message::error', self._on_error)
-
-    def _on_eos(self, bus, message):
-        """Handle end of stream - restart the video"""
-        self.player.seek_simple(
-            Gst.Format.TIME,
-            Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
-            0
-        )
-
-    def _on_error(self, bus, message):
-        """Handle video errors"""
-        err, debug = message.parse_error()
-        print(f"Video error: {err}, {debug}")
-
-    def _start_video(self):
-        """Start video playback"""
-        if self.player:
-            self.player.set_state(Gst.State.PLAYING)
-
-    def _stop_video(self):
-        """Stop video playback"""
-        if self.player:
-            self.player.set_state(Gst.State.NULL)
-
-    def _on_help_clicked(self, widget, event):
-        """Hide help overlay when clicked anywhere"""
-        self._stop_video()
-        self.help_overlay.hide()
-        return True
-    
-    def _show_help(self, button):
-        """Show help overlay"""
-        self.help_overlay.show_all()
-        self._start_video()
 
     def _on_puzzle_completed(self, gl_view):
         """Handler for the 'puzzle-completed' signal."""
@@ -288,8 +250,3 @@ class SomaCube(activity.Activity):
         """Handler for the 'Play Again' button click."""
         self.victory_box.hide()
         self.gl_view.reset_puzzle()
-
-    def __del__(self):
-        """Cleanup when activity is destroyed"""
-        if self.player:
-            self.player.set_state(Gst.State.NULL)
