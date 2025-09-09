@@ -1,52 +1,33 @@
-# Soma Cube
+# Soma Cubes 3D Puzzle
 
-A Python-based OpenGL application for visualizing and exploring the classic **Soma Cube** — a 3×3×3 puzzle made up of seven unique pieces.
+![Game Logo](Soma-Cube/activity/activity-somacube.svg)
 
----
+## 🎯 Overview
 
-## Features
+Soma Cubes 3D Puzzle is an immersive puzzle game inspired by the classic Soma Cube challenge. Players must strategically arrange seven distinct 3D geometric pieces to fill target shapes in a dynamic 3D environment. This game masterfully combines spatial reasoning, strategic thinking, and problem-solving skills to create an engaging and educational gaming experience.
 
-- Interactive 3D rendering of Soma Cube pieces using OpenGL.
-- Mouse/keyboard controls to rotate and manipulate the cube.
-- Includes demo/help animations (`help.gif`, `help.mp4`) to guide users.
+![Game Screenshot](./screen_shots/01.png)
 
----
+## 🎮 How to Play
 
-## Dependencies
+1. **Target Shape**: You'll be presented with a 3D target shape to fill
+2. **Seven Pieces**: Use all seven unique Soma cube pieces (made of unit cubes)
+3. **Rotate & Position**: Manipulate pieces in 3D space - rotate, flip, and position them
+4. **Perfect Fit**: Arrange all pieces to completely fill the target shape with no gaps or overlaps
+5. **Complete the Puzzle**: Successfully fill the entire target shape to win!
 
-Ensure you have the following installed:
+![Gameplay Example](./screen_shots/02.png)
 
-- **Python 3.6+**
-- **PyOpenGL** – for 3D graphics support
-- **Pillow (PIL)** – for loading textures (PNG images like `LakeCubeMap.png`, `Onyx.png`, etc.)
-- *(Optional)* **Sugar3** – if running in a Sugar environment (repo includes `sugargame/`)  
+## How to Use
 
-Install via pip:
+For a step-by-step walkthrough, see the official documentation on installing activities:
+
+[How to Install Activities – Sugar Labs Wiki](https://wiki.sugarlabs.org/go/How_to_install_activities)
+
+Alternatively, for development or testing purposes, you may clone or copy the activity directory into your `~/Activities` folder and then restart Sugar to have it appear in the activity ring:
 
 ```bash
-pip install PyOpenGL Pillow
+git clone <repository-url> ~/Activities/<activity-name>
+
+cp -r /path/to/local/activity ~/Activities/
 ```
-
-## Installation
-Clone the repo and install:
-```bash
-git clone https://github.com/Bishoywadea/Soma-Cube.git
-cd Soma-Cube
-pip install .
-sudo python setup.py install
-```
-
-## Demonstration
-
-Get a quick overview of the application:
-
-![Demo GIF](help.gif)  
-*Interactive demo showing basic interaction.*
-
-[![illustration tutorial video](https://i9.ytimg.com/vi_webp/Q4BKp3Yo3Uw/mq3.webp?sqp=CPDv2sMG-oaymwEmCMACELQB8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGGUgTihBMA8=&rs=AOn4CLCEh8DLiBCY1blowOssb9l5JiRdRQ)](https://youtu.be/Q4BKp3Yo3Uw)
-
----
-
-## License
-
-This project is licensed under **GPL‑3.0**.

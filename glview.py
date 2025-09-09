@@ -183,15 +183,12 @@ class GLView(Gtk.GLArea):
 
         def animate_step():
             if not hasattr(self, "animation_x"):
-                # Start at 0
                 self.animation_x = 0
-                self.animation_y = 20  # fixed Y
+                self.animation_y = 20
 
-                # Get screen width
                 screen = self.get_screen()
                 self.target_x = screen.get_width()
 
-                # Get pointer device
                 display = self.get_display()
                 device_manager = display.get_device_manager()
                 self.pointer = device_manager.get_client_pointer()
@@ -205,13 +202,12 @@ class GLView(Gtk.GLArea):
                     print(
                         f"Could not warp pointer to {self.animation_x}, {self.animation_y}"
                     )
-                self.animation_x += 10  # move 10 pixels per frame
-                return True  # Continue
+                self.animation_x += 3
+                return True
             else:
-                # Animation finished → click in the middle
                 self.click_center()
                 del self.animation_x
-                return False  # Stop
+                return False
 
         GLib.timeout_add(1, animate_step)
 

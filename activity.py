@@ -58,7 +58,7 @@ class SomaCube(activity.Activity):
         # Help button
         self.help_button = ToolButton("toolbar-help")
         self.help_button.set_tooltip("Help")
-        self._setup_help_palette()
+        self.help_button.connect("clicked", self._on_help_clicked)
         toolbar_box.toolbar.insert(self.help_button, -1)
         self.help_button.show()
 
@@ -76,92 +76,165 @@ class SomaCube(activity.Activity):
         self.set_toolbar_box(toolbar_box)
         toolbar_box.show_all()
 
-    def _setup_help_palette(self):
-        """Create a Sugar-style help palette"""
-        palette = Palette('Help')
-        palette.props.primary_text = 'Soma Cube Game Help'
-        palette.props.secondary_text = 'Learn how to play the Soma Cube puzzle game'
+    def _on_help_clicked(self, button):
+        """Show the help dialog when help button is clicked."""
+        help_message = """About Soma Cube:
+The Soma cube is a classic 3D puzzle where you must arrange 7 different pieces to form a perfect 3×3×3 cube. Each piece is made up of 3 or 4 unit cubes joined face-to-face.
 
-        # Create help content container
-        help_content = Gtk.VBox(spacing=style.DEFAULT_SPACING)
-        help_content.set_border_width(style.DEFAULT_SPACING)
+Game Controls:
+• Mouse: Select pieces and control camera view
+• Arrow Keys: Move the selected piece in the grid
+• W: Move camera forward
+• S: Move camera backward  
+• A: Move camera left
+• D: Move camera right
+• Shift: Move camera down
+• Space: Move camera up
 
-        # Game description
-        desc_label = Gtk.Label()
-        desc_label.set_markup('<b>About Soma Cube:</b>')
-        desc_label.set_alignment(0, 0.5)
-        help_content.pack_start(desc_label, False, False, 0)
+Piece Movement:
+• Up Arrow: Move piece up one level
+• Down Arrow: Move piece down one level
+• Left Arrow: Move piece left
+• Right Arrow: Move piece right
+• Page Up: Move piece forward (into the screen)
+• Page Down: Move piece backward (out of the screen)
 
-        desc_text = Gtk.Label()
-        desc_text.set_text('The Soma cube is a 3D puzzle where you must arrange\n'
-                           '7 different pieces to form a 3×3×3 cube.')
-        desc_text.set_alignment(0, 0.5)
-        desc_text.set_line_wrap(True)
-        desc_text.set_max_width_chars(style.MENU_WIDTH_CHARS)
-        help_content.pack_start(desc_text, False, False, 0)
+Goal:
+Arrange all 7 pieces to completely fill the 3×3×3 cube. No pieces should overlap or extend outside the cube boundaries. 
 
-        # Controls section
-        controls_label = Gtk.Label()
-        controls_label.set_markup('<b>Controls:</b>')
-        controls_label.set_alignment(0, 0.5)
-        help_content.pack_start(
-            controls_label,
-            False,
-            False,
-            style.DEFAULT_SPACING)
+Tips:
+• Start with corner and edge pieces - they have fewer placement options
+• Rotate the camera to see all sides of your progress
+• Each piece can be rotated and flipped in multiple orientations
+• There are 240 different solutions to discover!
 
-        # Create controls grid
-        controls_grid = Gtk.Grid()
-        controls_grid.set_column_spacing(style.DEFAULT_SPACING)
-        controls_grid.set_row_spacing(2)
+The Soma cube was invented by Danish mathematician Piet Hein in 1933. It's not just a puzzle - it's a fascinating exploration of 3D geometry and spatial reasoning!"""
+        
+        self._show_dialog("Soma Cube Help", help_message)
 
-        controls = [
-            ('Mouse:', 'Select and direct camera'),
-            ('Arrow Keys:', 'Move selected piece'),
-            ('W:', 'move camera forward'),
-            ('S:', 'move camera backward'),
-            ('A:', 'move camera left'),
-            ('D:', 'move camera right'),
-            ('Shift:', 'move camera down'),
-            ('Space:', 'move camera up'),
-        ]
+    def _show_dialog(self, title, message):
+        """Show custom help dialog with Sugar styling"""
+        try:
+            from sugar3.graphics import style
+            parent_window = self.get_toplevel()
+            
+            dialog = Gtk.Window()
+            dialog.set_title(title)
+            dialog.set_modal(True)
+            dialog.set_decorated(False)
+            dialog.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
+            dialog.set_border_width(style.LINE_WIDTH)
+            dialog.set_transient_for(parent_window)
+            
+            dialog_width = min(700, max(500, self.get_allocated_width() * 3 // 4))
+            dialog_height = min(600, max(400, self.get_allocated_height() * 3 // 4))
+            dialog.set_size_request(dialog_width, dialog_height)
+            
+            main_vbox = Gtk.VBox()
+            main_vbox.set_border_width(style.DEFAULT_SPACING)
+            dialog.add(main_vbox)
+            
+            header_box = Gtk.HBox()
+            header_box.set_spacing(style.DEFAULT_SPACING)
+            
+            title_label = Gtk.Label()
+            title_label.set_markup(f'<span size="large" weight="bold">🧩 {title}</span>')
+            header_box.pack_start(title_label, True, True, 0)
+            
+            close_button = Gtk.Button()
+            close_button.set_relief(Gtk.ReliefStyle.NONE)
+            close_button.set_size_request(40, 40)
+            
+            try:
+                from sugar3.graphics.icon import Icon
+                close_icon = Icon(icon_name='dialog-cancel', pixel_size=24)
+                close_button.add(close_icon)
+            except:
+                close_label = Gtk.Label()
+                close_label.set_markup('<span size="x-large" weight="bold">✕</span>')
+                close_button.add(close_label)
+            
+            close_button.connect('clicked', lambda b: dialog.destroy())
+            header_box.pack_end(close_button, False, False, 0)
+            
+            main_vbox.pack_start(header_box, False, False, 0)
+            
+            separator = Gtk.HSeparator()
+            main_vbox.pack_start(separator, False, False, style.DEFAULT_SPACING)
+            
+            scrolled = Gtk.ScrolledWindow()
+            scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            scrolled.set_hexpand(True)
+            scrolled.set_vexpand(True)
+            
+            content_label = Gtk.Label()
+            content_label.set_text(message)
+            content_label.set_halign(Gtk.Align.START)
+            content_label.set_valign(Gtk.Align.START)
+            content_label.set_line_wrap(True)
+            content_label.set_max_width_chars(90)
+            content_label.set_selectable(True)
+            content_label.set_margin_left(15)
+            content_label.set_margin_right(15)
+            content_label.set_margin_top(15)
+            content_label.set_margin_bottom(15)
+            
+            scrolled.add(content_label)
+            main_vbox.pack_start(scrolled, True, True, 0)
+            
+            try:
+                css_provider = Gtk.CssProvider()
+                css_data = """
+                window {
+                    background-color: #ffffff;
+                    border: 3px solid #4A90E2;
+                    border-radius: 12px;
+                }
+                label {
+                    color: #333333;
+                }
+                button {
+                    border-radius: 20px;
+                }
+                button:hover {
+                    background-color: rgba(74, 144, 226, 0.1);
+                }
+                scrolledwindow {
+                    border: 1px solid #e0e0e0;
+                    border-radius: 6px;
+                }
+                """.encode('utf-8')
+                
+                css_provider.load_from_data(css_data)
+                style_context = dialog.get_style_context()
+                style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            except Exception as css_error:
+                print(f"CSS styling failed: {css_error}")
+            
+            dialog.show_all()
+            
+            dialog.connect('key-press-event', 
+                        lambda d, e: d.destroy() if Gdk.keyval_name(e.keyval) == 'Escape' else False)
+            
+        except Exception as e:
+            print(f"Error showing help dialog: {e}")
+            self._show_simple_help_fallback()
 
-        for i, (key, action) in enumerate(controls):
-            key_label = Gtk.Label()
-            key_label.set_text(key)
-            key_label.set_alignment(0, 0.5)
-            key_label.set_markup(f'<tt>{key}</tt>')
-
-            action_label = Gtk.Label()
-            action_label.set_text(action)
-            action_label.set_alignment(0, 0.5)
-
-            controls_grid.attach(key_label, 0, i, 1, 1)
-            controls_grid.attach(action_label, 1, i, 1, 1)
-
-        help_content.pack_start(controls_grid, False, False, 0)
-
-        # Goal section
-        goal_label = Gtk.Label()
-        goal_label.set_markup('<b>Goal:</b>')
-        goal_label.set_alignment(0, 0.5)
-        help_content.pack_start(
-            goal_label, False, False, style.DEFAULT_SPACING)
-
-        goal_text = Gtk.Label()
-        goal_text.set_text('Arrange all 7 pieces to completely fill the 3×3×3 cube.\n'
-                           'No pieces should overlap or extend outside the cube.')
-        goal_text.set_alignment(0, 0.5)
-        goal_text.set_line_wrap(True)
-        goal_text.set_max_width_chars(style.MENU_WIDTH_CHARS)
-        help_content.pack_start(goal_text, False, False, 0)
-
-        # Add content to palette
-        palette.set_content(help_content)
-        help_content.show_all()
-
-        # Set palette on the help button
-        self.help_button.set_palette(palette)
+    def _show_simple_help_fallback(self):
+        """Simple fallback help dialog if custom dialog fails"""
+        dialog = Gtk.MessageDialog(
+            parent=self.get_toplevel(),
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Soma Cube Help"),
+        )
+        dialog.format_secondary_text(
+            _("Arrange 7 pieces to form a 3×3×3 cube. Use mouse to select pieces "
+              "and arrow keys to move them. Goal: fill the cube completely!")
+        )
+        dialog.run()
+        dialog.destroy()
 
     def _setup_content(self):
         # Create main container
