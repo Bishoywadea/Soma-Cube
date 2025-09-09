@@ -1,6 +1,6 @@
 # Soma Cubes 3D Puzzle
 
-![Game Logo](Soma-Cube/activity/activity-somacube.svg)
+![Game Logo](./activity/activity-somacube.svg)
 
 ## 🎯 Overview
 
